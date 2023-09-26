@@ -822,7 +822,6 @@ module load vcftools
 # alleles because of mutations in restriction site)
 
 vcftools --vcf recal.vcf --remove-filtered-all --min-alleles 2 --max-alleles 2 --recode-INFO-all --recode --out filt
-## 99 - MONITORING
 # After filtering, kept 1077 out of 1077 Individuals
 # Outputting VCF file...
 # After filtering, kept 13243 out of a possible 64345 Sites
@@ -842,17 +841,14 @@ awk '{ sum += $5 } END { if (NR > 0) print sum / NR }' out2.imiss
 
 cat out2.imiss | awk '$5>0.42' | cut -f 1 > underSequenced2
 wc -l underSequenced2
-## 99 - MONITORING
 # 69 underSequenced2
 
 grep -F -f underSequenced2 clonepairs_renamed.tab | wc -l
-## 99 - MONITORING
 # 13 underSequenced2
 
 grep -vF -f underSequenced2 clonepairs_renamed.tab > clonepairs_good2.tab
 
 vcftools --vcf filt.recode.vcf --remove underSequenced2 --max-missing 0.9 --recode-INFO-all --recode --out filt2
-## 99 - MONITORING 
 # After filtering, kept 1009 out of 1077 Individuals
 # Outputting VCF file...
 # After filtering, kept 9069 out of a possible 13243 Site
@@ -865,7 +861,6 @@ grep -n '#C' filt2.recode.vcf | cut -f10-1000 | sed 's/\t/\n/g' > indv_filt2_vcf
 grep -E "#|0/1|0/0.+1/1|1/1.+0/0" filt2.recode.vcf >polymorphs.vcf
 hetfilter.pl vcf=polymorphs.vcf maxhet=0.5 >best.vcf
 
-## 99 - MONITORING
 # 9041 total loci
 # 0 dropped because fraction of missing genotypes exceeded 0.5
 # 35 dropped because fraction of heterozygotes exceeded 0.5
@@ -880,26 +875,22 @@ grep -n '#C' best.vcf | cut -f10-1000 | sed 's/\t/\n/g' > indv_best_vcf
 # KEEPING replicates
 #-----------------------
 thinner.pl infile=best.vcf criterion=maxAF >thinMaxaf.vcf
-## 99 - MONITORING
 # 9006 total loci
 # 5771 loci selected
 
 # genotypic match between pairs of replicates (the most telling one is the last one, HetsDiscoveryRate - fraction of correctly called heterozygotes; if it is under 90% perhaps use fuzzy genotyping with ANGSD - see above)
 repMatchStats.pl vcf=thinMaxaf.vcf replicates=clonepairs_good2.tab > hetMatch.txt
 awk -F '\t' '$10<0.9' hetMatch.txt | wc -l
-## 99 - MONITORING
 # 70
 
 #-------------------------------------------------
 ### little bit further I had problems with the renamed files -> therfore I kept the old labelling for now with "oldnames"
 vcftools --vcf thinMaxaf.vcf --missing-indv --out minDP
-## 99 - MONITORING
 # After filtering, kept 1009 out of 1009 Individuals
 # Outputting Individual Missingness
 # After filtering, kept 5771 out of a possible 5771 Sites
 
 awk '{ sum += $5 } END { if (NR > 0) print sum / NR }' minDP.imiss
-## 99 - MONITORING
 # 0.0243533
 
 #----------
@@ -907,18 +898,15 @@ awk '{ sum += $5 } END { if (NR > 0) print sum / NR }' minDP.imiss
 # -----------
 cat minDP.imiss | awk '$5>0.25' | cut -f 1  > ind_miss_25
 wc -l ind_miss_25
-## 99 - MONITORING
 # 8 ind_miss_25
 
 
 vcftools --vcf thinMaxaf.vcf --remove ind_miss_25 --max-missing 0.9 --recode-INFO-all --recode --out all_miss25
-## 99 - MONITORING
 # After filtering, kept 1002 out of 1009 Individuals
 # Outputting VCF file...
 # After filtering, kept 5771 out of a possible 5771 Sites
 
 vcftools --vcf thinMaxaf.vcf --remove ind_miss_25 --max-missing 0.9 --maf 0.01 --recode-INFO-all --recode --out all_miss25_maf
-## 99 - MONITORING
 # After filtering, kept 1002 out of 1009 Individuals
 # Outputting VCF file...
 # After filtering, kept 581 out of a possible 5771 Sites
@@ -928,18 +916,15 @@ vcftools --vcf thinMaxaf.vcf --remove ind_miss_25 --max-missing 0.9 --maf 0.01 -
 # -----------
 cat minDP.imiss | awk '$5>0.05' | cut -f 1  > ind_miss_05
 wc -l ind_miss_05
-## 99 - MONITORING
 # 153 ind_miss_05
 
 vcftools --vcf thinMaxaf.vcf --remove ind_miss_05 --max-missing 0.9 --recode-INFO-all --recode --out all_miss05
-## 99 - MONITORING
 # After filtering, kept 857 out of 1009 Individuals
 # Outputting VCF file...
 # After filtering, kept 5771 out of a possible 5771 Sites
 
 
 vcftools --vcf thinMaxaf.vcf --remove ind_miss_05 --max-missing 0.9 --maf 0.01 --recode-INFO-all --recode --out all_miss05_maf
-## 99 - MONITORING
 # After filtering, kept 857 out of 1009 Individuals
 # Outputting VCF file...
 # After filtering, kept 575 out of a possible 5771 Sites
@@ -952,16 +937,13 @@ grep -F -f indv clonepairs_good2.tab | grep -vF -f ind_miss_05 > clonepairs_rena
 repMatchStats.pl vcf=all_miss25.recode.vcf replicates=clonepairs_renamed_25.tab > hetMatch_all_miss25.txt
 repMatchStats.pl vcf=all_miss05.recode.vcf replicates=clonepairs_renamed_05.tab > hetMatch_all_miss05.txt
 awk -F '\t' '$10<0.9' hetMatch.txt | wc -l
-## 99 - MONITORING
 # 70 -7 = 63
 
 
 awk -F '\t' '$10<0.9' hetMatch_all_miss25.txt | wc -l
-## 99 - MONITORING
 # 69 -7 = 62
 
 awk -F '\t' '$10<0.9' hetMatch_all_miss05.txt | wc -l
-## 99 - MONITORING
 # 40 -7 = 33
 
 ##########################################
@@ -1062,9 +1044,7 @@ grep 'rep\|repl\|Rep' steffi_indv_all_05_maf > steffi_indv_uniq_05_maf
 ######################
 ###### MISS 025 ######
 #----------------------------
-#### MONITORNG
 vcftools --vcf all_miss25_renamed.vcf --keep steffi_monitoring_indv_all_25 --recode --recode-INFO-all --out zostera_monitoring_230504_steffi_miss25_99 # Steffis
-#### 99 Monitoring
 # After filtering, kept 260 out of 1002 Individuals
 # Outputting VCF file...
 # After filtering, kept 5771 out of a possible 5771 Sites
@@ -1072,9 +1052,7 @@ vcftools --vcf all_miss25_renamed.vcf --keep steffi_monitoring_indv_all_25 --rec
 ######################
 ###### MISS 05 ######
 #----------------------------
-#### MONITORNG
 vcftools --vcf all_miss05_renamed.vcf --keep steffi_monitoring_indv_all_05 --recode --recode-INFO-all --out zostera_monitoring_230504_steffi_miss05_99 # Steffis
-#### 99 Monitoring
 # After filtering, kept 203 out of 857 Individuals
 # Outputting VCF file...
 # After filtering, kept 5771 out of a possible 5771 Sites
@@ -1083,41 +1061,35 @@ vcftools --vcf all_miss05_renamed.vcf --keep steffi_monitoring_indv_all_05 --rec
 ###### MISS MAF 25 and 05 for all my indv ######
 #----------------------------
 vcftools --vcf all_miss25_maf_renamed.vcf --keep steffi_indv_all_25_maf --recode --recode-INFO-all --out zostera_230504_steffi_miss25_maf_99 # Steffis
-#### 99 Monitoring
 # After filtering, kept 774 out of 1002 Individuals
 # Outputting VCF file...
 # After filtering, kept 581 out of a possible 581 Sites
 
 
 vcftools --vcf all_miss05_maf_renamed.vcf --keep steffi_indv_all_05_maf --recode --recode-INFO-all --out zostera_230504_steffi_miss05_maf_99 # Steffis
-#### 99 Monitoring
 # After filtering, kept 653 out of 857 Individuals
 # Outputting VCF file...
 # After filtering, kept 575 out of a possible 575 Sites
 
 
 ####################################
-###### Steffi unique data sets #####
+###### Unique data sets #####
 vcftools --vcf all_miss25_renamed.vcf --remove steffi_indv_uniq_25 --recode --recode-INFO-all --out zostera_230414_230504_miss25_uniq_99 # uniq
-#### 99 Monitoring
 # After filtering, kept 900 out of 1002 Individuals
 # Outputting VCF file...
 # After filtering, kept 5771 out of a possible 5771 Sites
 
 vcftools --vcf all_miss25_maf_renamed.vcf --remove steffi_indv_uniq_25_maf --recode --recode-INFO-all --out zostera_230504_steffi_miss25_maf_uniq_99
-#### 99 Monitoring
 # After filtering, kept 900 out of 1002 Individuals
 # Outputting VCF file...
 # After filtering, kept 581 out of a possible 581 Sites
 
 vcftools --vcf all_miss05_renamed.vcf --remove steffi_indv_uniq_05 --recode --recode-INFO-all --out zostera_230504_steffi_miss05_uniq_99 # uniq
-#### 99 Monitoring 
 # After filtering, kept 769 out of 857 Individuals
 # Outputting VCF file...
 # After filtering, kept 5771 out of a possible 5771 Sites
 
 vcftools --vcf all_miss05_maf_renamed.vcf --remove steffi_indv_uniq_05_maf --recode --recode-INFO-all --out zostera_230504_steffi_miss05_maf_uniq_99 # uniq
-#### 99 Monitoring
 # After filtering, kept 769 out of 857 Individuals
 # Outputting VCF file...
 # After filtering, kept 575 out of a possible 575 Sites
