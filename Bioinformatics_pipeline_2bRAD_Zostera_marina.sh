@@ -3,7 +3,7 @@
 # Based on the last edited version by Ellika Faust November 2022
 
 ###############################################
-### 	     	Rackham		                      ###
+### 	     	Rackham		            ###
 ###############################################
 # user guides
 # https://uppmax.uu.se/support-sv/user-guides/slurm-user-guide/
