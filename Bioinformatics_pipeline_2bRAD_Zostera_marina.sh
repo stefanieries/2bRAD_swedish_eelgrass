@@ -1,5 +1,5 @@
 # 2bRAD pipline log for Zostera marina
-# Edited by Stefanie Ries August 2023
+# Edited by Stefanie Ries Septmeber 2023
 # Based on the last edited version by Ellika Faust November 2022
 
 ###############################################
