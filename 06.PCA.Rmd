@@ -1,0 +1,444 @@
+---
+title: "PCA"
+output:
+  html_notebook:
+    toc: yes
+    toc_depth: 3  # upto three depths of headings (specified by #, ## and ###)
+    number_sections: true  ## if you want number sections at each table header
+    toc_float: true
+    theme: united  # many options for theme, this one is my favorites.
+    highlight: tango  # specifies the syntax highlighting style
+    code_folding: hide
+#editor_options: 
+  #chunk_output_type: console
+---
+
+```{r}
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+```
+
+# Set up
+```{r}
+HOME <- "~/Library/CloudStorage/Dropbox/Steffi_Zostera_analysis_2023/Monitoring2023/Monitoring_eelgrass_scripts_for_figshare" # directory 
+DATA <- paste0(HOME, "/data/") # data folder
+RESULT <- paste0(HOME, "/results/") #result folder
+SCRATCH <- paste0(HOME, "/scratch/") #result folder
+```
+
+```{r include=FALSE}
+library(tidyverse)
+library(adegenet)
+library(vcfR)
+library(fishualize)
+library(patchwork)
+```
+
+# 25% missingnes
+
+```{r}
+load(paste0(SCRATCH, "gen_zostera_25_uniq.rda"))
+head(gen_zostera_25_uniq)
+gen_zostera_25_uniq@strata
+```
+
+First extract allelic data (as frequencies) and replace missing values using the accessor tab and then use the PCA procedure (dudi.pca).
+
+```{r}
+set.seed(9)
+gen_zostera_25_scale <- scaleGen(gen_zostera_25_uniq, scale = F, NA.method = "mean")
+gen_zostera_25_pca <- dudi.pca(gen_zostera_25_scale, cent = TRUE, scale = FALSE, scannf = FALSE, nf = 13)
+```
+
+## eigenvalues
+A quick look at the eigenvalues
+
+```{r}
+barplot(gen_zostera_25_pca$eig)
+```
+
+```{r}
+# calculate percentage from eigenvalues
+percent <- function(x, digits = 2, format = "f", ...) {
+  paste0(formatC(100 * x, format = format, digits = digits, ...), "%")
+}
+
+pc_percent  <- 1:10
+for (i in 1:10) {
+  pc_percent[i] <- paste0("PC",i," (", percent(
+  gen_zostera_25_pca$eig[i]/sum(gen_zostera_25_pca$eig)), ")")
+  }
+pc_percent
+```
+
+```{r}
+# setting colour
+pop_col <- fish(n = 15, option = "Hypsypops_rubicundus")
+# + scale_fill_fish_d(option = "Hypsypops_rubicundus")
+  
+#times -1 to flip the pca, 
+gen_zostera_25_pca$li$Axis2 <- gen_zostera_25_pca$li$Axis2*-1
+```
+
+```{r}
+# adding pop labels to the data
+pca_zostera <-
+  as_tibble(gen_zostera_25_pca$li) %>% 
+  mutate(pop_code =pop(gen_zostera_25_uniq)) %>% 
+  mutate(order =1:length(pop(gen_zostera_25_uniq)))
+  #mutate(pop_name = factor(meta_df$site_full, levels = unique(meta_df$site_full)))
+#  arrange(-order)
+
+```
+
+## PCA 1 & 2
+
+```{r}
+# plotting with ggglot
+(pca1 <- ggplot(pca_zostera, aes(x=Axis1, y=Axis2, fill=pop_code, group = pop_code, shape = pop_code)) +
+  geom_point(size=5, alpha=0.5) +
+  labs(title ="Axis 1 & Axis 2", x=pc_percent[1], y=pc_percent[2]) +
+  scale_fill_fish_d(option = "Hypsypops_rubicundus") +
+  scale_color_fish_d(option = "Hypsypops_rubicundus") +
+  scale_shape_manual(values= rep(21:25,4)) +
+  stat_ellipse(aes(col=pop_code), alpha=0.5, type = "norm", linetype = 2) +
+  theme_light() +
+  theme(
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 15),
+    plot.title = element_text(size = 20),
+    legend.title = element_blank(),
+    #legend.justification=c(-0.2,-0.2), 
+    legend.position="right"
+  ))
+
+ggsave(pca1, file = paste0(RESULT,"pca_fullname25.png"), width = 17, height = 15, units  ="cm", dpi=300)
+```
+
+```{r}
+# plotting with ggglot
+(pca <- ggplot(pca_zostera, aes(x=Axis1, y=Axis2, fill=pop_code, group = pop_code, shape = pop_code)) +
+  geom_point(size=5, alpha=0.7) +
+  labs(x=pc_percent[1], y=pc_percent[2]) +
+  scale_fill_fish_d(option = "Hypsypops_rubicundus") +
+  scale_color_fish_d(option = "Hypsypops_rubicundus") +
+  scale_shape_manual(values= rep(21:25,4)) +
+  stat_ellipse(aes(col=pop_code), alpha=0.5, type = "norm", linetype = 2) +
+  coord_cartesian(xlim = c(-8,5), ylim = c(-5, 8), expand = FALSE) +
+  theme_light() +
+  theme(
+    axis.text = element_text(size = 11),
+    axis.title = element_text(size = 14),
+    plot.title = element_text(size = 20),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 11)
+    #legend.justification=c(0,-0.55), 
+    #legend.position=c(0.85,0.3)
+  ))
+#ggsave(pca, file = paste0(RESULT,"pca_fullname25.png"), width = 17, height = 15, units  ="cm", dpi=300)
+```
+
+```{r}
+pca_1 <- ggplot(pca_zostera, aes(x=Axis1, fill=pop_code)) +
+  geom_density(alpha=0.7, colour = NA) +
+  scale_fill_fish_d(option = "Hypsypops_rubicundus") +
+  coord_cartesian(ylim = c(0,NA),xlim =c(-2.5, 11), expand = FALSE) +
+  theme_void() +
+  theme(
+    axis.title = element_blank(),
+    plot.title = element_blank(),
+    legend.title = element_blank(),
+    legend.position = "none",
+    axis.line.x = element_line(colour = "black")
+  )
+```
+
+```{r}
+pca_2 <- ggplot(pca_zostera, aes(x=Axis2, fill=pop_code)) +
+  geom_density(alpha=0.7, colour = NA) +
+  scale_fill_fish_d(option = "Hypsypops_rubicundus") +
+  coord_flip(ylim = c(0,NA), xlim =  c(-13, 8), expand = FALSE) +
+  theme_void() +
+  theme(
+    axis.title = element_blank(),
+    plot.title = element_blank(),
+    legend.title = element_blank(),
+    legend.position = "none",
+    axis.line.y = element_line(colour = "black")
+  )
+```
+
+```{r, fig.height=7, fig.width=8}
+layout <- "
+AAAAA#
+BBBBBC
+BBBBBC
+BBBBBC
+BBBBBC
+BBBBBC
+"
+pc_zostera_comb <- pca_1 + pca + pca_2 +
+  plot_layout(design = layout, guides = "collect")
+  #theme(legend.position='bottom')
+pc_zostera_comb
+ggsave(pc_zostera_comb, file = paste0(RESULT,"pca_zostera_comb25.png"), width = 18, height = 15, units  ="cm", dpi=300) 
+```
+
+## PCA Supplemetary
+```{r , fig.height=7, fig.width=10}
+# plotting with ggglot
+pca1_2 <- ggplot(pca_zostera, aes(x=Axis1, y=Axis2, fill=pop_code, group = pop_code, shape = pop_code)) +
+  geom_point(size=5, alpha=0.5) +
+  labs(title ="Axis 1 & Axis 2", x=pc_percent[1], y=pc_percent[2]) +
+  scale_fill_fish_d(option = "Hypsypops_rubicundus") +
+  scale_color_fish_d(option = "Hypsypops_rubicundus") +
+  scale_shape_manual(values= rep(21:25,4)) +
+  stat_ellipse(aes(col=pop_code), alpha=0.5, type = "norm", linetype = 2) +
+  theme_light() +
+  theme(
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 15),
+    plot.title = element_text(size = 20),
+    legend.title = element_blank(),
+    legend.justification=c(0,0), 
+    legend.position=c(0,0)
+  )
+
+eig <- ggplot(data.frame(gen_zostera_25_pca$eig),aes(seq_along(gen_zostera_25_pca$eig),gen_zostera_25_pca$eig)) +
+  geom_bar(stat="identity") +
+  labs(title = "Eigenvalues") +
+  xlim(0,50) +
+  theme_light() +
+  theme(
+  axis.title = element_blank(),
+  plot.title = element_text(size = 20)
+  )
+
+library(patchwork)
+(pca1_2 | eig) + plot_layout(guides = "collect") & theme(legend.text = element_text(size = 12))
+ggsave(file = paste0(RESULT,"pca_supplementary25_2.0.png"), width = 18, height = 10, units  ="cm", dpi=300)
+ggsave(file = paste0(RESULT,"pca_supplementary25_2.0.svg"), width = 18, height = 10, units  ="cm", dpi=300)
+```
+
+# Making plots with 81 MLLs
+```{r}
+load(paste0(SCRATCH, "gc_no_rep_mlg.rda"))
+```
+
+```{r}
+# converting to genind
+gen_zostera_mlg <- as(gc_no_rep_mlg, "genind")
+```
+
+
+First extract allelic data (as frequencies) and replace missing values using the accessor tab and then use the PCA procedure (dudi.pca).
+
+```{r}
+set.seed(9)
+gen_zostera_25_scale <- scaleGen(gc_no_rep_mlg, scale = F, NA.method = "mean")
+gen_zostera_25_pca <- dudi.pca(gen_zostera_25_scale, cent = TRUE, scale = FALSE, scannf = FALSE, nf = 13)
+```
+
+## eigenvalues
+A quick look at the eigenvalues
+
+```{r}
+eig_81 <- barplot(gen_zostera_25_pca$eig)
+ggsave(eig_81, file = paste0(RESULT,"eig_81.svg"), width = 10, height = 5, units  ="cm", dpi=300)
+```
+
+```{r}
+# calculate percentage from eigenvalues
+percent <- function(x, digits = 2, format = "f", ...) {
+  paste0(formatC(100 * x, format = format, digits = digits, ...), "%")
+}
+
+pc_percent  <- 1:10
+for (i in 1:10) {
+  pc_percent[i] <- paste0("PC",i," (", percent(
+    gen_zostera_25_pca$eig[i]/sum(gen_zostera_25_pca$eig)), ")")
+}
+pc_percent
+```
+
+```{r}
+# setting colour
+pop_col <- fish(n = 15, option = "Hypsypops_rubicundus")
+# + scale_fill_fish_d(option = "Hypsypops_rubicundus")
+
+#times -1 to flip the pca, 
+gen_zostera_25_pca$li$Axis2 <- gen_zostera_25_pca$li$Axis2*-1
+gen_zostera_25_pca$li$Axis1 <- gen_zostera_25_pca$li$Axis1*-1
+```
+
+```{r}
+# adding pop labels to the data
+pca_zostera <-
+  as_tibble(gen_zostera_25_pca$li) %>% 
+  mutate(pop_code =pop(gc_no_rep_mlg)) %>% 
+  mutate(order =1:length(pop(gc_no_rep_mlg)))
+#mutate(pop_name = factor(meta_df$site_full, levels = unique(meta_df$site_full)))
+#  arrange(-order)
+```
+
+## PCA 1 & 2
+```{r}
+# plotting with ggglot
+(pca1 <- ggplot(pca_zostera, aes(x=Axis1, y=Axis2, fill=pop_code, group = pop_code, shape = pop_code)) +
+    geom_point(size=5, alpha=0.5) +
+    labs(title ="Axis 1 & Axis 2", x=pc_percent[1], y=pc_percent[2]) +
+    scale_fill_fish_d(option = "Hypsypops_rubicundus") +
+    scale_color_fish_d(option = "Hypsypops_rubicundus") +
+    scale_shape_manual(values= rep(21:25,4)) +
+    stat_ellipse(aes(col=pop_code), alpha=0.5, type = "norm", linetype = 2) +
+    theme_light() +
+    theme(
+      axis.text = element_text(size = 12),
+      axis.title = element_text(size = 15),
+      plot.title = element_text(size = 20),
+      legend.title = element_blank(),
+      #legend.justification=c(-0.2,-0.2), 
+      legend.position="right"
+    ))
+```
+
+
+```{r}
+# plotting with ggglot
+(pca <- ggplot(pca_zostera, aes(x=Axis1, y=Axis2, fill=pop_code, group = pop_code, shape = pop_code)) +
+    geom_point(size=4, alpha=0.7) +
+    labs(x=pc_percent[1], y=pc_percent[2]) +
+    scale_fill_fish_d(option = "Hypsypops_rubicundus") +
+    scale_color_fish_d(option = "Hypsypops_rubicundus") +
+    scale_shape_manual(values= rep(21:25,4)) +
+    stat_ellipse(aes(col=pop_code), alpha=0.5, type = "norm", linetype = 2) +
+    coord_cartesian(xlim = c(-7,4), ylim = c(-5.5, 5), expand = FALSE) +
+    theme_light() +
+    theme(
+      axis.text = element_text(size = 11),
+      axis.title = element_text(size = 14),
+      plot.title = element_text(size = 20),
+    ))
+
+ggsave(pca, file = paste0(RESULT,"pca_fullname25_MLG.png"), width = 17, height = 15, units  ="cm", dpi=300)
+#ggsave(pca, file = paste0(RESULT,"pca_fullname25_MLG.svg"), width = 20, height = 15, units  ="cm", dpi=300)
+```
+
+```{r}
+pca_1 <- ggplot(pca_zostera, aes(x=Axis1, fill=pop_code)) +
+  geom_density(alpha=0.7, colour = NA) +
+  scale_fill_fish_d(option = "Hypsypops_rubicundus") +
+  coord_cartesian(ylim = c(0,NA),xlim =c(-6,3.5), expand = FALSE) +
+  theme_void() +
+  theme(
+    axis.title = element_blank(),
+    plot.title = element_blank(),
+    legend.title = element_blank(),
+    legend.position = "none",
+    axis.line.x = element_line(colour = "black")
+  )
+```
+
+```{r}
+pca_2 <- ggplot(pca_zostera, aes(x=Axis2, fill=pop_code)) +
+  geom_density(alpha=0.7, colour = NA) +
+  scale_fill_fish_d(option = "Hypsypops_rubicundus") +
+  coord_flip(ylim = c(0,NA), xlim =  c(-3.5, 5), expand = FALSE) +
+  theme_void() +
+  theme(
+    axis.title = element_blank(),
+    plot.title = element_blank(),
+    legend.title = element_blank(),
+    legend.position = "none",
+    axis.line.y = element_line(colour = "black")
+  )
+```
+
+```{r, fig.height=6, fig.width=7}
+layout <- "
+AAAAA#
+BBBBBC
+BBBBBC
+BBBBBC
+BBBBBC
+BBBBBC
+"
+pc_zostera_comb <- pca_1 + pca + pca_2 +
+  plot_layout(design = layout, guides = "collect")
+#theme(legend.position='bottom')
+pc_zostera_comb
+ggsave(pc_zostera_comb, file = paste0(RESULT,"pca_zostera_comb25_MLG.png"), width = 18, height = 15, units  ="cm", dpi=300) 
+```
+
+## PCA 3-8
+
+```{r , fig.height=7, fig.width=8}
+# plotting with ggglot
+pca1_3 <- ggplot(pca_zostera, aes(x=Axis1, y=Axis3, fill=pop_code, group = pop_code, shape = pop_code)) +
+  geom_point(size=5, alpha=0.5) +
+  labs(title ="Axis 1 & Axis 3", x=pc_percent[1], y=pc_percent[3]) +
+  scale_fill_fish_d(option = "Hypsypops_rubicundus") +
+  scale_color_fish_d(option = "Hypsypops_rubicundus") +
+  scale_shape_manual(values= rep(21:25,4)) +
+  stat_ellipse(aes(col=pop_code), alpha=0.5, type = "norm", linetype = 2) +
+  theme_light() +
+  theme(
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 15),
+    plot.title = element_text(size = 20),
+    legend.title = element_blank(),
+    legend.justification=c(0,0), 
+    legend.position=c(0,0)
+  )
+
+# plotting with ggglot
+pca3_4 <- ggplot(pca_zostera, aes(x=Axis3, y=Axis4*-1, fill=pop_code, group = pop_code, shape = pop_code)) +
+  geom_point(size=5, alpha=0.5) +
+  labs(title ="Axis 3 & Axis 4", x=pc_percent[3], y=pc_percent[4]) +
+  scale_fill_fish_d(option = "Hypsypops_rubicundus") +
+  scale_color_fish_d(option = "Hypsypops_rubicundus") +
+  scale_shape_manual(values= rep(21:25,4)) +
+  stat_ellipse(aes(col=pop_code), alpha=0.5, type = "norm", linetype = 2) +
+  theme_light() +
+  theme(
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 15),
+    plot.title = element_text(size = 20),
+    legend.title = element_blank(),
+    legend.justification=c(0,0), 
+    legend.position=c(0,0)
+  )
+
+# plotting with ggglot
+pca5_6 <- ggplot(pca_zostera, aes(x=Axis5, y=Axis6, fill=pop_code, group = pop_code, shape = pop_code)) +
+  geom_point(size=5, alpha=0.5) +
+  labs(title ="Axis 5 & Axis 6", x=pc_percent[5], y=pc_percent[6]) +
+  scale_fill_fish_d(option = "Hypsypops_rubicundus") +
+  scale_color_fish_d(option = "Hypsypops_rubicundus") +
+  scale_shape_manual(values= rep(21:25,4)) +
+  stat_ellipse(aes(col=pop_code), alpha=0.5, type = "norm", linetype = 2) +
+  theme_light() +
+  theme(
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 15),
+    plot.title = element_text(size = 20),
+    legend.title = element_blank(),
+    legend.justification=c(0,0), 
+    legend.position=c(0,0)
+  )
+
+eig <- ggplot(data.frame(gen_zostera_25_pca$eig),aes(seq_along(gen_zostera_25_pca$eig),gen_zostera_25_pca$eig)) +
+  geom_bar(stat="identity") +
+  labs(title = "Eigenvalues") +
+  xlim(0,50) +
+  theme_light() +
+  theme(
+    axis.title = element_blank(),
+    plot.title = element_text(size = 12)
+  )
+
+ggsave(eig, file = paste0(RESULT,"eig_supplementary25_MLG.svg"), width = 10, height = 5, units  ="cm", dpi=300)
+
+library(patchwork)
+(pca1_3 | pca3_4) / (pca5_6 | eig) + plot_layout(guides = "collect") & theme(legend.text = element_text(size = 20))
+ggsave(file = paste0(RESULT,"pca_supplementary25_MLG.png"), width = 40, height = 40, units  ="cm", dpi=300)
+```

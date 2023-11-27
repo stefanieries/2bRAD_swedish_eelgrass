@@ -1,0 +1,267 @@
+---
+title: "MLG diversity stats"
+output:
+  html_notebook:
+    toc: yes
+    toc_depth: 3  # upto three depths of headings (specified by #, ## and ###)
+    number_sections: true  ## if you want number sections at each table header
+    toc_float: true
+    theme: united  # many options for theme, this one is my favorites.
+    highlight: tango  # specifies the syntax highlighting style
+    code_folding: hide
+#editor_options: 
+  #chunk_output_type: console
+---
+
+```{r setup}
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+```
+
+```{r set up}
+HOME <- "~/Library/CloudStorage/Dropbox/Steffi_Zostera_analysis_2023/Monitoring2023/Monitoring_eelgrass_scripts_for_figshare" # directory 
+DATA <- paste0(HOME, "/data/") # data folder
+RESULT <- paste0(HOME, "/results/") #result folder
+SCRATCH <- paste0(HOME, "/scratch/") #result folder
+```
+
+```{r}
+library(poppr)
+library(adegenet)
+library(dartR)
+library(tidyverse)
+library(dbplyr)
+library(dplyr)
+```
+
+```{r}
+#loading snpclone that contains MLG info (created in poppr_clone.rmd)
+load(paste0(SCRATCH, "sc_no_rep_mlg.rda"))
+load(paste0(SCRATCH, "sc_no_rep.rda"))
+load(paste0(SCRATCH, "gc_no_rep_mlg.rda"))
+load(paste0(SCRATCH, "gc_no_rep.rda"))
+
+#load(paste0(SCRATCH, "gl_zostera_25_mono.rda"))
+#load(paste0(SCRATCH, "gen_zostera_25_mono.rda"))
+```
+
+```{r}
+gc_mlg_df <- mlg.table(gc_no_rep)
+```
+
+## MLL
+```{r}
+# converting to genind
+gen_zostera_mlg <- as(gc_no_rep_mlg, "genind")
+#gen_zostera_mlg$pop
+# convert to genlight
+gl_zostera_mlg <- as(sc_no_rep_mlg, "genlight")
+#gl_zostera_mlg$pop
+```
+
+## ALL 241 INDV
+```{r}
+# converting to genind
+#gen_zostera_241 <- as(gc_no_rep, "genind")
+#gen_zostera_mlg$pop
+
+# convert to genlight
+#gl_zostera_241 <- as(sc_no_rep, "genlight")
+
+# convert to genlight
+
+
+```
+
+# 1 Basic stats
+# 1.1 N, MLG and Richness
+
+```{r}
+# n Individuals
+nInd <- rowSums(gc_mlg_df)
+
+# n MLGs
+nMLG <- rowSums(gc_mlg_df>0)
+# Richness
+Richness <- round((nMLG-1)/(nInd-1), 4)
+
+mlg_df <- data.frame(nInd, nMLG, Richness)%>% 
+    rownames_to_column(var = "pop")
+mlg_df
+```
+
+# 1.2 Private alleles (poppr package)
+
+## MLL
+```{r}
+pa_gen <- poppr::private_alleles(gc_no_rep_mlg)
+pa_sum <- apply(t(pa_gen), 2, function(c)sum(c!=0)) %>% 
+  enframe(name = "pop", value = "Pa")
+pa_sum
+```
+
+## ALL 241 INDV
+```{r}
+#pa_gen_241 <- poppr::private_alleles(gc_no_rep)
+#pa_sum_241 <- apply(t(pa_gen_241), 2, function(c)sum(c!=0)) %>% 
+#  enframe(name = "pop", value = "Pa_all")
+#pa_sum_241
+#
+#pa_sum_241_uPa <- pa_sum_241 %>% 
+#  mutate(uPa = round(Pa_all*(2*nInd/(2*nInd -1))))
+
+
+```
+
+# 1.3 Ho, He, Fis_MLG. Fis (dartR package)
+
+```{r}
+het_all_df <- gl.report.heterozygosity(gl_zostera_mlg, plot.out = TRUE)
+
+het_all_df <- rename(het_all_df, 'Fis_MLG' = FIS)
+```
+
+```{r}
+#het_all_with_clones_df <- gl.report.heterozygosity(gl_zostera_241, plot.out = TRUE)
+
+#het_all_with_clones_df <- rename(het_all_with_clones_df, 'Fis_all' = FIS)
+```
+
+```{r}
+#het_mono_df <- gl.report.heterozygosity(gl_zostera_25, plot.out = TRUE)
+
+#het_mono_df <- rename(het_mono_df, 'Fis_mono' = FIS)
+```
+
+```{r}
+het_df <- het_all_df %>% 
+  select(pop, nLoc, Ho, He, Fis_MLG)
+
+fis_all_df <- het_all_with_clones_df %>% 
+  select(pop, Fis_all)
+```
+
+# 1.4 FIS (dartR package) - this didnt work for me -> because of MLG dataset clonal meadows (just 1 MLG per site for 3 sites)
+```{r}
+#basic_mlg <- seppop(gl_zostera_mlg) %>% 
+#  sapply(function(ls) gl.basic.stats(ls)$overall) %>% 
+#  data.frame()
+```
+
+```{r}
+#fis_df <- t(basic_mlg) %>% 
+#  data.frame() %>% 
+#  rownames_to_column(var = "pop") %>% 
+#  select(pop, Fis)
+```
+
+# 1.5 polymorphic
+
+## MLL
+```{r}
+pol_sum <- seppop(gen_zostera_mlg) %>% 
+  sapply(function(ls) sum(isPoly(ls)))
+```
+
+```{r}
+pol_df <- pol_sum %>% 
+  data.frame() %>% 
+  rownames_to_column(var = "pop") %>%
+  as_tibble()
+
+pol_df <- rename(pol_df, 'nPol' = .)
+```
+
+## ALL 241 INDV
+```{r}
+#pol_sum_241 <- seppop(gen_zostera_241) %>% 
+#  sapply(function(ls) sum(isPoly(ls)))
+```
+
+```{r}
+#pol_df_241 <- pol_sum_241 %>% 
+#  data.frame() %>% 
+#  rownames_to_column(var = "pop") %>%
+#  as_tibble()
+
+#pol_df_241 <- rename(pol_df_241, 'nPol' = .)
+
+#pol_df_241_uPol <- list(het_all_df, pol_df_241)
+
+#pol_df_241_uPol <- pol_df_241_uPol %>% reduce(full_join, by="pop") %>% 
+#  mutate(Pol = nPol/nLoc*100) %>% 
+#  mutate(uPol = round(Pol*(2*nInd/(2*nInd -1))))
+
+```
+
+# 1.7 Yu Nucleotide Diversity
+# 1.7.1 Yu Nucleotide Diversity - with clones and without replicates
+
+```{r}
+# making a table with mean stats and sites from the 6 chromosomes
+# ND is the mean from each population with clones without replicates
+
+mean_nucleotide_distance <- data.frame(pop = c("KOD", "STE", "GOT", "GRO", "HOG", "ALA",  "YST", "FUR", "KAR", "KLI", "HOR", "SLI", "KRA", "NYN", "BJO"),
+                                       ND = c(0.046, 0.038, 0.035, 0.012, 0.033, 0.033, 0.020, 0.023, 0.018, 0.022, 0.017, 0.020, 0.011, 0.021, 0.015))
+```
+
+# 1.7.2 Yu Nucleotide Diversity - without clones and without replicates
+```{r}
+# making a table with mean stats and sites from the 6 chromosomes MLG
+mean_nucleotide_distance_MLG <- data.frame(pop = c("KOD", "STE", "GOT", "GRO", "HOG", "ALA",  "YST", "FUR", "KAR", "KLI", "HOR", "SLI", "KRA", "NYN", "BJO"),
+                                       ND_MLG = c(0.049, 0.042, 0.038, 0.028, 0.036, 0.037, 0.024, 0.039, 0.026, 0.025, 0.025, 0.037, 0.024, 0.056, 0.029))
+```
+
+# 1.8 combine
+
+## 1.8.1 MLL data
+```{r}
+#put all data frames into list
+#df_list <- list(mlg_df, het_df, pol_df, pa_sum, fis_df, fis_df_MLG)
+df_list <- list(mlg_df, het_df,pol_df, pa_sum, mean_nucleotide_distance, mean_nucleotide_distance_MLG, fis_all_df)
+
+#merge all data frames in list
+mlg_diversity <- df_list %>% reduce(full_join, by="pop") %>% 
+  mutate(Pol = nPol/nLoc*100) %>% 
+  select(pop,nInd,nMLG,Richness,nLoc,nPol,Pol,Pa, Ho, He, ND, ND_MLG, Fis_all, Fis_MLG)
+
+mlg_diversity
+```
+
+## 1.8.1 241 INDV DATA
+```{r}
+#put all data frames into list
+#df_list_241 <- list(mlg_df, het_all_df, pol_df_241, pa_sum_241, mean_nucleotide_distance, fis_all_df)
+
+#merge all data frames in list
+#withclones_diversity <- df_list_241 %>% reduce(full_join, by="pop") %>% 
+#  mutate(Pol = nPol_all/nLoc*100) %>% 
+#  select(pop,nInd,nLoc,nPol_all,Pol,Pa_all, Ho, He, ND, Fis_all)
+
+#withclones_diversity
+```
+
+
+# 1.8 correct for sample size
+
+Expected heterozygosity adjusted (He.adj) = He * n_Loc / (n_Loc + n.invariant)
+
+Unbiased expected heterozygosity (uHe) = He * (2 * n_Ind / (2 * n_Ind - 1))
+
+```{r}
+mlg_diversity <- mlg_diversity %>% 
+  mutate(uPol = round(Pol*(2*nMLG/(2*nMLG -1)))) %>% 
+  mutate(uPa = round(Pa*(2*nMLG/(2*nMLG -1))))
+
+save(mlg_diversity, file=paste0(SCRATCH, "mlg_diversity.rda"))
+write.csv(mlg_diversity, file = paste0(RESULT, "mlg_diversity.csv"))
+
+```
+
+```{r}
+#withclones_diversity <- withclones_diversity %>% 
+#  mutate(uPol = round(Pol*(2*nMLG/(2*nMLG -1)))) %>% 
+#  mutate(uPa = round(Pa*(2*nMLG/(2*nMLG -1))))
+#
+#save(withclones_diversity, file=paste0(SCRATCH, "withclones_diversity.rda"))
+#write.csv(withclones_diversity, file = paste0(RESULT, "withclones_diversity.csv"))
+```

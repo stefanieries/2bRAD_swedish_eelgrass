@@ -1,0 +1,451 @@
+---
+title: "MAP"
+output:
+  html_notebook:
+    toc: yes
+    toc_depth: 3  # upto three depths of headings (specified by #, ## and ###)
+    number_sections: true  ## if you want number sections at each table header
+    toc_float: true
+    theme: united  # many options for theme, this one is my favorites.
+    highlight: tango  # specifies the syntax highlighting style
+    code_folding: hide
+#editor_options: 
+  #chunk_output_type: console
+---
+
+```{r}
+knitr::opts_chunk$set(fig.width=12, fig.height=8) 
+```
+
+
+# Set up
+```{r set up}
+HOME <- "~/Library/CloudStorage/Dropbox/Steffi_Zostera_analysis_2023/Monitoring2023/Monitoring_eelgrass_scripts_for_figshare" # directory 
+DATA <- paste0(HOME, "/data/") # data folder
+RESULT <- paste0(HOME, "/results/") #RESULT folder
+SCRATCH <- paste0(HOME, "/scratch/") #SCRATCH folder
+pop_info <- paste0(DATA, "pop_info.csv")
+```
+
+
+```{r}
+library("ggspatial")
+library("rnaturalearth")
+library("rnaturalearthdata")
+library(ggmap)
+library("ggplot2")
+library("sf")
+library(fishualize)
+library(tidyverse)
+theme_set(theme_bw())
+```
+
+
+```{r}
+pop_info_df <- read.csv(pop_info, stringsAsFactors = TRUE, sep = ";")
+pop_info_df$site <- factor(pop_info_df$site, levels = pop_info_df$site)
+```
+
+This is one way to try and choose the size of the map based on data
+```{r}
+xmin <- min(pop_info_df$long)
+xmax <- max(pop_info_df$long)
+xmean <-mean(pop_info_df$long) 
+ymin <- min(pop_info_df$lat)
+ymax <- max(pop_info_df$lat)
+ymean <-mean(pop_info_df$lat) 
+buff<-0.5
+```
+
+
+# Sites
+
+# Map of all the sites
+
+```{r}
+world <- ne_countries(scale = 'large', returnclass = "sf")
+```
+
+# mapping all sites
+```{r, fig.width=10, fig.height=5}
+ggplot(data = world) +
+    geom_sf() +
+    annotation_scale(location = "br", width_hint = 0.5) +
+    annotation_north_arrow(location = "tl", which_north = "true", 
+        pad_x = unit(0.75, "in"), pad_y = unit(0.75, "in"),
+        style = north_arrow_fancy_orienteering) +
+    coord_sf(xlim = c(xmin-buff, xmax+buff), ylim = c(ymin, ymax)) +
+  geom_point(data = pop_info_df,  # Specify the data for geom_point()
+             aes(x = long,  # Specify the x axis as longitude
+                 y = lat, shape = site, fill = site),  # Colour the points based on species name
+             alpha = 1,# Set point opacity to 80%
+             #position=position_jitter(width=0.5, height=0.5),
+             size = 3) + # set size
+  scale_fill_fish_d(option = "Hypsypops_rubicundus") +
+  scale_color_fish_d(option = "Hypsypops_rubicundus") +
+  scale_shape_manual(values= rep(21:25,4)) +
+  labs(x="Longitude", y="Latitude") +
+  theme_bw(base_size = 20) +
+  theme(
+    legend.title = element_blank(),
+    #legend.justification=c(2,),
+    #legend.spacing.y = unit(5, "cm"),
+    legend.key = element_rect(color = NA, fill = NA),
+    legend.key.size = unit(1.5, "cm"),
+    legend.text = element_text(size = 14),
+    legend.position="right")
+
+ggsave(file = paste0(RESULT,"map_sites_large.png"), width = 10, height = 5, units  ="in", dpi=300)
+```
+
+Now saving it with the right dimensions for a journal
+```{r}
+map_sites <- ggplot(data = world) +
+    geom_sf() +
+    annotation_scale(location = "tl", width_hint = 0.4) +
+    annotation_north_arrow(location = "tl", which_north = "true",
+                             height = unit(1, "cm"), width = unit(1, "cm"),
+        pad_x = unit(0.2, "in"), pad_y = unit(0.2, "in"),
+        style = north_arrow_fancy_orienteering) +
+    coord_sf(xlim = c(xmin-buff, xmax+buff), ylim = c(ymin, ymax)) +
+  geom_point(data = pop_info_df,  # Specify the data for geom_point()
+             aes(x = long,  # Specify the x axis as longitude
+                 y = lat, shape = site, fill = site),  # Colour the points based on species name
+             alpha = 1,# Set point opacity to 80%
+             #position=position_jitter(width=0.5, height=0.5),
+             size = 3) + # set size
+  scale_fill_fish_d(option = "Hypsypops_rubicundus") +
+  scale_color_fish_d(option = "Hypsypops_rubicundus") +
+  scale_shape_manual(values= rep(21:25,4)) +
+  labs(x="Longitude", y="Latitude") +
+  theme_bw(base_size = 11) +
+  theme(
+    legend.title = element_blank(),
+    legend.key = element_rect(color = NA, fill = NA),
+    legend.key.size = unit(3, "mm"),
+    legend.position="right",
+    legend.background = element_rect(fill='transparent'),
+    panel.background = element_rect(fill = "transparent", colour = NA),
+    panel.grid = element_blank()
+  )
+map_sites
+
+ggsave(map_sites,file = paste0(RESULT,"map_sites.png"), width = 150, height = 120, units  ="mm", dpi=300)
+#ggsave(map_sites,file = paste0(RESULT,"map_sites.svg"), width = 150, height = 120, units  ="mm", dpi=300)
+```
+
+
+
+# Mapping diversity
+```{r}
+load(paste0(SCRATCH, "mlg_diversity.rda"))
+pop_info_div_df <- pop_info_df %>% 
+  full_join(mlg_diversity, by = c("site" = "pop"))
+pop_info_div_df
+
+write_csv(pop_info_div_df, file = paste0(RESULT, "mlg_diversity.csv"))
+```
+
+```{r}
+map_base <- ggplot(data = world) +
+    geom_sf() +
+    coord_sf(xlim = c(xmin-buff, xmax+buff), ylim = c(ymin, ymax)) +
+  labs(x="Longitude", y="Latitude") +
+  theme()
+```
+
+## By size
+## in colour (fishulaize)
+```{r}
+p1 <- map_base +
+    geom_point(data = pop_info_div_df, alpha = .7, 
+             aes(x = long, y = lat, size = nInd, col = site_full)) +
+  scale_color_fish_d(option = "Hypsypops_rubicundus",guide = "none") +
+  labs(size = "Individuals")
+
+p2 <- map_base +
+    geom_point(data = pop_info_div_df, alpha = .7,
+               aes(x = long, y = lat, size = nMLG, col = site_full)) +
+  scale_color_fish_d(option = "Hypsypops_rubicundus",guide = "none") +
+    labs(size = "MLGs")
+
+p3 <- map_base +
+    geom_point(data = pop_info_div_df, alpha = .7,
+               aes(x = long, y = lat, size = Richness, col = site_full)) +
+  scale_color_fish_d(option = "Hypsypops_rubicundus",guide = "none")
+  labs(size = "Richness")
+  
+p4 <- map_base +
+    geom_point(data = pop_info_div_df, alpha = .7,
+               aes(x = long, y = lat, size = Ho, col = site_full)) +
+  scale_color_fish_d(option = "Hypsypops_rubicundus",guide = "none")+
+  labs(size = "Heterozygosity")
+
+p5 <- map_base +
+    geom_point(data = pop_info_div_df, alpha = .7,
+               aes(x = long, y = lat, size = uPol, col = site_full)) +
+  scale_color_fish_d(option = "Hypsypops_rubicundus",guide = "none")+
+  labs(size = "Polymorphic sites %")
+p6 <- map_base +
+    geom_point(data = pop_info_div_df, alpha = .7,
+               aes(x = long, y = lat, size = uPa, col = site_full)) +
+  scale_color_fish_d(option = "Hypsypops_rubicundus",guide = "none")+
+  labs(size = "Private alleles")
+
+p7 <- map_base +
+    geom_point(data = pop_info_div_df, alpha = .7,
+               aes(x = long, y = lat, size = ND, col = site_full)) +
+  scale_color_fish_d(option = "Hypsypops_rubicundus",guide = "none")+
+  labs(size = "Nucleotide diversity")
+
+p8 <- map_base +
+    geom_point(data = pop_info_div_df, alpha = .7,
+               aes(x = long, y = lat, size = ND_MLG, col = site_full)) +
+  scale_color_fish_d(option = "Hypsypops_rubicundus",guide = "none")+
+  labs(size = "MLL Nucleotide diversity")
+
+p9 <- map_base +
+    geom_point(data = pop_info_div_df, alpha = .7,
+               aes(x = long, y = lat, size = Fis, col = site_full)) +
+  scale_color_fish_d(option = "Hypsypops_rubicundus",guide = "none")
+  labs(size = "Inbreeding coefficient")
+  
+p10 <- map_base +
+    geom_point(data = pop_info_div_df, alpha = .7,
+               aes(x = long, y = lat, size = Fis_MLG, col = site_full)) +
+  scale_color_fish_d(option = "Hypsypops_rubicundus",guide = "none")
+  labs(size = "MLL Inbreeding coefficient")
+
+```
+
+## grey
+```{r}
+"#FFEA00"
+"#1d2240"
+"#757780"
+"beige"
+#p1g <- (map_base +
+#    geom_point(data = pop_info_div_df, 
+#               alpha = .7,
+#               aes(x = long, y = lat, size = Ho, col = site_full),
+#               colour = "#1d2240",
+#               fill = "#1d2240") +
+#  labs(size = "Heterozygosity", position = "bottom"))
+
+p2g <- map_base +
+  geom_point(data = pop_info_div_df, 
+             alpha = 1,
+             aes(x = long, y = lat, size = Pol, col = site_full),
+             fill = "#FFEA00",                  # Filling color of the points
+             shape = 21,                        # Using a filled circle shape
+             color = "#403A00",                 # Border color of the points (stroke)
+  ) +
+  labs(size = "Polymorphic sites %", position = "bottom") +
+  theme(legend.position = "bottom",
+  panel.background = element_rect(fill = "transparent", colour = NA),
+  panel.grid = element_blank()
+  ) 
+
+#p3g <- map_base +
+#    geom_point(data = pop_info_div_df, alpha = .7,
+#               aes(x = long, y = lat, size = ND, col = site_full),
+#               colour = "#1d2240",
+#               fill = "#1d2240") +
+#  labs(size = "Nucleotide diversity", position = "bottom") +
+#  theme(legend.position = "bottom") +
+#  guides(size = guide_legend(override.aes = list(alpha = 1)))
+
+p4g <- map_base +
+  geom_point(data = pop_info_div_df, 
+             alpha = 1,
+             aes(x = long, y = lat, size = ND_MLG, col = site_full),
+             fill = "#FFEA00",                  # Filling color of the points
+             shape = 21,                        # Using a filled circle shape
+             color = "#403A00",                 # Border color of the points (stroke)
+  ) +
+  labs(size = "MLL Nucleotide diversity")  +
+  theme(legend.position = "bottom",
+  panel.background = element_rect(fill = "transparent", colour = NA),
+  panel.grid = element_blank()
+  )
+
+#p5g <- map_base +
+#    geom_point(data = pop_info_div_df, alpha = .7,
+#               aes(x = long, y = lat, size = Fis, col = site_full),
+#               colour = "#1d2240",
+#               fill = "#1d2240") +
+#  labs(size = "Inbreeding coefficient")
+
+#p6g <- map_base +
+#    geom_point(data = pop_info_div_df, alpha = .7,
+#               aes(x = long, y = lat, size = Fis_MLG, col = site_full),
+#               colour = "#1d2240",
+#               fill = "#1d2240") +
+#  labs(size = "MLL Inbreeding coefficient")
+
+p7g <- map_base +
+  geom_point(data = pop_info_div_df, 
+             alpha = 1,
+             aes(x = long, y = lat, size = Pa, col = site_full),
+             fill = "#FFEA00",                  # Filling color of the points
+             shape = 21,                        # Using a filled circle shape
+             color = "#403A00",                 # Border color of the points (stroke)
+  ) +
+  labs(size = "Private alleles", position = "bottom")   +
+  theme(legend.position = "bottom",
+  panel.background = element_rect(fill = "transparent", colour = NA),
+  panel.grid = element_blank()
+  )
+
+p8g <- map_base +
+  geom_point(data = pop_info_div_df, 
+             alpha = 1,
+             aes(x = long, y = lat, size = Richness, col = site_full),
+             fill = "#FFEA00",                  # Filling color of the points
+             shape = 21,                        # Using a filled circle shape
+             color = "#403A00",                 # Border color of the points (stroke)
+  ) +
+  labs(size = "Richness", position = "bottom")   +
+  theme(legend.position = "bottom",
+  panel.background = element_rect(fill = "transparent", colour = NA),
+  panel.grid = element_blank()
+  )
+
+```
+
+```{r, fig.width=15, fig.height=15}
+library(patchwork)
+
+grey_mlg_div_map <- p8g + p2g + p7g + p4g +
+  plot_layout(ncol = 2) +
+  plot_annotation(tag_levels = 'A')
+ grey_mlg_div_map
+ 
+ grey_mlg_div_map2 <- p8g + p2g + p7g + p4g +
+  plot_layout(ncol = 2) +
+  plot_annotation(tag_levels = 'A')
+ grey_mlg_div_map2
+
+ggsave(grey_mlg_div_map2, file = paste0(RESULT,"grey_mll_div_map4.svg"), width = 250, height = 250, units  ="mm", dpi=300)
+ 
+ggsave(grey_mlg_div_map, file = paste0(RESULT,"grey_mll_div_map.png"), width = 300, height = 100, units  ="mm", dpi=300)
+
+ggsave(p7g, file = paste0(RESULT,"Pa_map.png"), width = 150, height = 100, units  ="mm", dpi=300)
+ggsave(p2g, file = paste0(RESULT,"Pol_map.png"), width = 150, height = 100, units  ="mm", dpi=300)
+ggsave(p4g, file = paste0(RESULT,"ND_MLL_map.png"), width = 150, height = 100, units  ="mm", dpi=300)
+```
+
+# mapping admixture
+```{r}
+load(paste0(SCRATCH, "cluster.rda"))
+```
+
+
+```{r}
+pie_2 <- cluster[[2]] %>% 
+  group_by(pop) %>% 
+  mutate(count = n()/2) %>% 
+  group_by(pop,Cluster) %>% 
+  summarise(var = sum(Admixture/count)) 
+
+# Basic piechart
+(cluster_2_pie <- pie_2 %>% 
+    ggplot(aes(x=factor(1), y=var, fill=Cluster)) +
+  geom_bar(stat="identity", width=1, colour = "white") +
+    facet_wrap(~pop) +
+  coord_polar("y", start = 0) +
+  theme_void() +
+  theme(
+    legend.position = "none"
+  ))
+
+ggsave(cluster_2_pie, file = paste0(RESULT,"/LEA/pie_K2",".png"), width = 90, height = 90, units  ="cm", dpi=300)
+```
+
+```{r}
+pie_5 <- cluster[[5]] %>% 
+  group_by(pop) %>% 
+  mutate(count = n()/5) %>% 
+  group_by(pop,Cluster) %>% 
+  summarise(var = sum(Admixture/count)) 
+
+# Basic piechart
+(cluster_5_pie <- pie_5 %>% 
+    ggplot(aes(x=factor(1), y=var, fill=Cluster)) +
+  geom_bar(stat="identity", width=1, colour = "white") +
+    facet_wrap(~pop) +
+  coord_polar("y", start = 0) +
+  theme_void() +
+  theme(
+    legend.position = "none"
+  ))
+
+ggsave(cluster_5_pie, file = paste0(RESULT,"/LEA/pie_K5",".png"), width = 90, height = 90, units  ="cm", dpi=300)
+```
+
+**This is a bit of a quick and dirty method for now. takes bit more time to make it look good.**
+
+```{r}
+library("scatterpie")
+library(fishualize)
+map_cluster <- list_along(1:length(cluster)) # create empty list 
+for(i in 1:length(cluster)){
+map_cluster[[i]] <- cluster[[i]] %>% 
+  group_by(pop) %>% 
+  mutate(count = n()/2) %>% 
+  group_by(pop,Cluster) %>% 
+  summarise(var = sum(Admixture/count))  %>% 
+  left_join(pop_info_df, by = c("pop"="site")) %>% 
+  pivot_wider(names_from = Cluster, values_from = var)
+map_cluster[[i]] <-  map_base +
+    geom_scatterpie(data = map_cluster[[i]], 
+             aes(x = long, y = lat, group=pop, r=0.25),cols=paste0(rep("V", i), seq_along(1:i))) +
+  scale_fill_fish_d(option = "Hypsypops_rubicundus") +
+  ggtitle(paste0("K=", i)) +
+  theme(legend.position = "bottom",
+  panel.background = element_rect(fill = "transparent", colour = NA),
+  panel.grid = element_blank()
+  )
+#  coord_equal()
+  coord_polar()  # Fix the aspect ratio
+print(map_cluster[[i]])
+}
+
+save(map_cluster, file=paste0(SCRATCH, "map_cluster.rda"))
+```
+
+```{r}
+load(file=paste0(SCRATCH, "map_cluster.rda"))
+```
+
+
+```{r}
+map2 <- map_cluster[[2]] +
+  #scale_fill_manual(values =  c("#0C59FEFF","#FC0F00FF" )) 
+  scale_fill_manual(values =  c("#E4C200FF","#22196FFF"))
+
+map5 <- map_cluster[[5]] + 
+#  scale_fill_manual(values =  c("#CAE18EFF","#FEC700FF","#0C59FEFF","#00BAFFFF","#FC0F00FF"))
+  scale_fill_manual(values =  c("#1E52DCFF","#22196FFF", "#DB5461" ,"#E4C200FF", "#D69209FF"))
+```
+
+```{r, fig.width=15, fig.height=8}
+library(patchwork)
+library("cowplot")
+
+maps_admix <- K2_lab / K5_lab
+maps_admix
+
+pie_maps <- map2 + map5
+pie_maps
+
+pie_maps_admix <- maps_admix / pie_maps
+
+pie_maps_admix <- K2_lab / K5_lab + plot_grid(map2 + map5) +
+  plot_layout(ncol = 1)
+pie_maps_admix
+
+ggsave(pie_maps, file = paste0(RESULT,"pie_maps_K2_and_K5.png"), width = 10, height = 7, units  ="in", dpi=300)
+
+ggsave(maps_admix, file = paste0(RESULT,"maps_admix.png"), width = 20, height = 5, units  ="in", dpi=300)
+```

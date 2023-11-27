@@ -1,0 +1,141 @@
+---
+title: "Basic_stat"
+output:
+  html_notebook:
+    toc: yes
+    toc_depth: 3  # upto three depths of headings (specified by #, ## and ###)
+    number_sections: true  ## if you want number sections at each table header
+    toc_float: true
+    theme: united  # many options for theme, this one is my favorites.
+    highlight: tango  # specifies the syntax highlighting style
+    code_folding: hide
+#editor_options: 
+  #chunk_output_type: console
+---
+
+```{r setup}
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+```
+
+
+```{r set up}
+HOME <- "~/Library/CloudStorage/Dropbox/Steffi_Zostera_analysis_2023/Monitoring2023/Monitoring_eelgrass_scripts_for_figshare" # directory 
+DATA <- paste0(HOME, "/data/") # data folder
+RESULT <- paste0(HOME, "/results/") #result folder
+SCRATCH <- paste0(HOME, "/scratch/") #result folder
+pop_info <- paste0(DATA, "pop_info.csv")
+```
+
+Loading packages
+```{r message=FALSE, warning=FALSE}
+library(vcfR)
+library(tidyverse)
+library(adegenet)
+library(fishualize)
+library(poppr)
+library(dartR)
+#library(diveRsity)
+library(kableExtra)
+library(ape)
+library(poppr)
+```
+
+# 1. Load data
+
+```{r}
+load(paste0(SCRATCH, "gc_no_rep_mlg.rda"))
+load(paste0(SCRATCH, "sc_no_rep_mlg.rda"))
+```
+
+
+```{r}
+# converting to genind
+gen_zostera_mlg <- as(gc_no_rep_mlg, "genind")
+# convert to genlight
+gl_zostera_mlg <- as(sc_no_rep_mlg, "genlight")
+```
+
+# 2. Private alleles
+
+```{r}
+pv_pa_gen <- gl.report.pa(gl_zostera_mlg)
+write.csv(pv_pa_gen, file=paste0(RESULT, "pv_pa.csv"))
+```
+
+```{r}
+pv_pa_gen %>% 
+  add_row(pop2 = "BJO", pop1 = "BJO") %>% 
+  add_row(pop2 = "KOD", pop1 = "KOD") %>% 
+  complete(pop1, pop2) %>% 
+  replace_na(list(totalpriv=0)) %>% 
+  arrange(match(pop1, popNames(gen_zostera_mlg))) %>% 
+  arrange(match(pop2, popNames(gen_zostera_mlg))) %>% 
+  mutate(pop1 = factor(pop1, levels = unique(pop1))) %>% 
+  mutate(pop2 = factor(pop2, levels = unique(pop2))) %>% 
+  ggplot( mapping = aes(x=pop2, y=pop1, fill=totalpriv)) +
+  geom_tile()
+```
+
+
+# 3. Missingnes
+```{r}
+gclone_zostera <- as.genclone(gen_zostera_mlg)
+missing_df <- info_table(gclone_zostera, plot = TRUE, plotlab = FALSE)
+```
+
+# 4. FST
+```{r, cache=TRUE}
+# Calculate a pairwise fst values for populations in a genlight object
+fst <- gl.fst.pop(gl_zostera_mlg, nboots = 999, nclusters = 3)
+save(fst, file = paste0(RESULT, "fst.rda"))
+```
+
+```{r}
+load(paste0(RESULT, "fst.rda"))
+```
+
+```{r}
+# make all na to a zero
+fst$Fsts[is.na(fst$Fsts)] <- 0
+
+# make all negative values to a zero
+fst$Fsts[fst$Fsts < 0] <- 0
+matFst <- fst$Fsts + t(fst$Fsts)
+
+matFst
+```
+
+
+## 4.1 Heatmaps
+```{r}
+png(paste0(RESULT, "pariwise_fst_heatmap_code.png"), width = 20, height = 15, units = "cm", res = 300)
+gl.plot.heatmap(as.dist(matFst))
+dev.off()
+```
+
+```{r}
+colnames(matFst) <- unique(gl_zostera_mlg@other$ind.metrics$site_full)
+rownames(matFst) <- unique(gl_zostera_mlg@other$ind.metrics$site_full)
+#png(paste0(RESULT, "pariwise_fst_heatmap_fullname.png"), width = 20, height = 17, units = "cm", res = 300)
+gl.plot.heatmap(as.dist(matFst))
+
+#dev.off()
+```
+
+
+## 4.2 FST Tree
+```{r, fig.width=10}
+FST_tree  <- nj(matFst)
+png(paste0(RESULT, "pariwise_fst_tree.png"), width = 15, height = 12, units = "cm", res = 300)
+par(oma=c(0,0,0,0))
+par(mar=c(2,1,1,1))
+plot.phylo(FST_tree,
+           tip.col = fish(n = 18, option = "Hypsypops_rubicundus"),
+           label.offset = 0.005)
+axisPhylo()
+# legend("bottomright", 
+#       legend = unique(gl_zostera_mlg@other$ind.metrics$site_full),
+#       fill = fish(n = 18, option = "Hypsypops_rubicundus"))
+dev.off()
+```
+

@@ -1,0 +1,668 @@
+---
+title: "Clones"
+output:
+  html_notebook:
+    toc: yes
+    toc_depth: 3  # upto three depths of headings (specified by #, ## and ###)
+    number_sections: true  ## if you want number sections at each table header
+    toc_float: true
+    theme: united  # many options for theme, this one is my favorites.
+    highlight: tango  # specifies the syntax highlighting style
+    code_folding: hide
+#editor_options: 
+  #chunk_output_type: console
+---
+
+```{r}
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+```
+
+```{r}
+HOME <- "~/Library/CloudStorage/Dropbox/Steffi_Zostera_analysis_2023/Monitoring2023/Monitoring_eelgrass_scripts_for_figshare" # directory 
+DATA <- paste0(HOME, "/data/") # data folder
+RESULT <- paste0(HOME, "/results/") #result folder
+SCRATCH <- paste0(HOME, "/scratch/") #result folder
+```
+
+```{r include=FALSE}
+library(poppr)
+library(vcfR)
+library(adegenet)
+library(poppr)
+library(ape)
+library(RColorBrewer)
+library(fishualize)
+library(igraph)
+library(phangorn)
+```
+
+# Load data
+```{r}
+#load genind object
+load(paste0(SCRATCH, "gl_zostera_25.rda"))
+load(paste0(SCRATCH, "gen_zostera_25.rda"))
+
+gl_zostera <- gl_zostera_25 # rename to work with following scripts
+gen_zostera <- gen_zostera_25 # rename to work with following scripts
+```
+
+
+```{r, fig.height=25, fig.width=10}
+reg_col <- fish(n = nlevels(gl_zostera$other$ind.metrics$region), option = "Hypsypops_rubicundus")[gl_zostera$other$ind.metrics$region]
+pop_col <- fish(n = nPop(gl_zostera), option = "Hypsypops_rubicundus")[gl_zostera$pop]
+```
+
+# MLGs
+Calculate distance
+```{r}
+#calculate genetic distance 
+bit_dist <- bitwise.dist(gl_zostera) # Hamming distance, or the number of differences between two strings.
+```
+
+```{r}
+#convert to snpclone
+sc<-as.snpclone(gl_zostera)
+# Naive (original) MLG
+nmll(sc)
+```
+
+# Hammings distance - bitwise.dist
+
+```{r,fig.height=5, fig.width=10}
+# for some reason plotting becomes weird with bitwise.dist
+eelgrass_filtered <- filter_stats(sc, distance = bitwise.dist,  plot = TRUE, hist = "scott")
+```
+
+```{r,fig.height=5, fig.width=10}
+# for some reason plotting becomes weird with bitwise.dist
+# plotting the genetic distance cutoff with ablines
+# each column is 0.001 of Genetic Distance Cutoff
+#png(paste0(RESULT, "bitwise.dist_genetic.distance_cutoff.png"), width = 20, height = 10, units = "cm", res = 300) 
+
+eelgrass_filtered <- filter_stats(sc, distance = bitwise.dist,  plot = TRUE, hist = "scott")
+  cex <- 1.5
+  par(cex.lab=cex, cex.axis=cex, cex.main=cex)
+  abline(v = 0.01543498, col = "black", lty=1)
+  legend("bottomright", 
+       legend = c("Max replicate distance"),
+       pch = "|",
+       col = c("black"),
+       title = "Thresholds")
+#dev.off()
+```
+
+# Different thresholds
+```{r}
+#this if for later plotting the tree
+max_thresh <- max(eelgrass_filtered$average$THRESHOLDS)/2
+max_thresh
+
+```
+
+## distance based of replicates
+```{r}
+library(tidyverse)
+
+# takes distance matrix and makes it into a tibble anf filter to only have replicate pairs
+df_dist <- as.matrix(bit_dist) %>% 
+  as_tibble(rownames = "ind1") %>% 
+  pivot_longer(!ind1, names_to = "ind2", values_to = "dist") 
+rep_dist <- df_dist %>% 
+  filter(str_detect(ind1, "rep$")) %>% 
+  filter(!str_detect(ind2, "rep$")) %>% 
+  mutate(ind1match = str_replace(ind1, "-rep","")) %>% 
+  filter(ind2 == ind1match) %>% 
+  dplyr::select(ind1 = ind1, ind2 = ind2, dist = dist) %>%
+  arrange(desc(dist))
+
+#(max_rep_dist <- max(rep_dist$dist))
+max_rep_dist <- 0.01543498
+```
+
+```{r, fig.height=10, fig.width=10}
+# filter now with the max rep dist: 0.01543499
+max_rep_dist <- 0.01543498
+mlg.filter(sc, distance = bitwise.dist) <- max_rep_dist
+nmll(sc)
+sc_mlg <- mlg.table(sc)
+```
+
+```{r}
+#bitwise_dist_matrix <- bitwise.dist(gl_zostera, mat = T)
+#head(bitwise_dist_matrix)
+#write.csv(bitwise_dist_matrix, "bitwise_dist_matrix.csv", row.names = TRUE)
+```
+
+## Tree
+
+```{r, cache=TRUE}
+#distance tree
+set.seed(9)
+bit_tree_2 <- aboot(gl_zostera, tree = "wpgma", distance = bitwise.dist, sample = 100, showtree = F, cutoff = 50, quiet = T)
+save(bit_tree_2, file=paste0(SCRATCH,"bit_tree_2.rda"))
+```
+
+```{r}
+load(file = paste0(SCRATCH,"bit_tree_2.rda"))
+```
+
+# THE TREE TO PRINT - WPGMA TREE - SHOWS US MORE RELIABLE CLADES
+```{r, fig.height=50, fig.width=10}
+#png(paste0(RESULT, "bit_wpgma_tree.png"), width = 10, height = 50, units = "in", res = 300)
+plot.phylo(bit_tree_2, 
+           cex = 1, 
+           main = 'Genetic distance',
+           font = 2, 
+           adj = 0, 
+           tip.color =  pop_col)
+axisPhylo()
+nodelabels(bit_tree_2$node.label, adj = c(1.3, -0.5), frame = "n", cex = 0.8,font = 3, xpd = TRUE)
+legend("topleft", 
+       legend = unique(gl_zostera$other$ind.metrics$site_full),
+       fill = fish(n = 15, option = "Hypsypops_rubicundus"),
+       title = "Sites")
+legend("topright", 
+       legend = c("Max replicate distance"),
+       pch = "|",
+       col = c("black"),
+       title = "Thresholds")
+abline(v = max_thresh-max_rep_dist/10, col = c("black"), lty=2)
+#dev.off()
+```
+
+
+# Stats without replicates
+```{r, include=FALSE}
+eelgrass_filtered <- filter_stats(sc, distance = bitwise.dist,  plot = TRUE, hist = "scott")
+#average_thresh  <- cutoff_predictor(eelgrass_filtered$average$THRESHOLDS)
+mlg.filter(sc, distance = bitwise.dist) <- max_rep_dist
+nmll(sc)
+```
+
+```{r}
+# removing replicates
+sc_no_rep <- sc[!(indNames(sc) %in% rep_dist$ind1),]
+save(sc_no_rep, file=paste0(SCRATCH, "sc_no_rep.rda"))
+```
+
+```{r}
+sc_no_rep_mlg <- clonecorrect(sc_no_rep, strata = ~Site)
+popNames(sc_no_rep_mlg) <- popNames(sc_no_rep)
+save(sc_no_rep_mlg, file=paste0(SCRATCH, "sc_no_rep_mlg.rda"))
+```
+
+```{r, fig.height=10, fig.width=10}
+sc_mlg <- mlg.table(sc_no_rep)
+```
+
+
+```{r}
+#Function for number of individuals
+nInd <- function(x){
+ x <- drop(as.matrix(x))
+ if (length(dim(x)) > 1){ # if it's a matrix
+   res <- rowSums(x)
+ } else {                 # if it's a vector
+   res <- sum(x)
+ }
+ return(res)
+}
+
+#Function for number of MLGs
+nMLG <- function(x){
+ x <- drop(as.matrix(x))
+ if (length(dim(x)) > 1){ # if it's a matrix
+   res <- rowSums(x>0)
+ } else {                 # if it's a vector
+   res <- sum(x>0)
+ }
+ return(res)
+}
+
+#Function for calculating clonal richness
+nCR <- function(x){
+ x <- drop(as.matrix(x))
+ if (length(dim(x)) > 1){ # if it's a matrix
+   res <- (rowSums(x > 0)-1)/(rowSums(x)-1)
+ } else {                 # if it's a vector
+   res <- (sum(x > 0)-1)/(sum(x)-1)
+ }
+ return(res)
+}
+```
+
+```{r}
+div_stat <- diversity_stats(sc_mlg, nInd = nInd, nMLG = nMLG, nCR = nCR)
+div_stat
+```
+
+```{r}
+#remove replicates from genlight
+gl_no_rep <- gl_zostera[!(indNames(gl_zostera) %in% rep_dist$ind1),]
+
+library(dartR)
+het_df <- gl.report.heterozygosity(gl_no_rep)
+```
+
+
+## Stats with poppr on genclone N
+Here using geneclone instead as it works better for calculating statistics, but should note that the distances change, but not the number of MLGs..
+
+```{r, cache = TRUE}
+gc <- as.genclone(gen_zostera)
+gc_custom_thresh <- 65
+mlg.filter(gc, distance = diss.dist) <- gc_custom_thresh
+gc_mlg1 <- mlg.table(gc)
+gc[!(indNames(gc) %in% rep_dist$ind1),]
+```
+
+
+```{r, cache=TRUE , fig.height=4, fig.width=5}
+# remove replicates
+gc_no_rep <- gc[!(indNames(gc) %in% rep_dist$ind1),]
+save(gc_no_rep, file=paste0(SCRATCH, "gc_no_rep.rda"))
+
+#to check mll
+gc_mlg <- mlg.table(gc_no_rep)
+```
+
+```{r}
+gc_no_rep_mlg <- clonecorrect(gc_no_rep, strata = ~Site)
+popNames(gc_no_rep_mlg) <- popNames(gc_no_rep)
+save(gc_no_rep_mlg, file=paste0(SCRATCH, "gc_no_rep_mlg.rda"))
+```
+
+```{r, include=FALSE, cache=TRUE}
+# diversity stats
+gc_stats <- poppr(gc_no_rep)
+save(gc_stats, file = paste0(SCRATCH,"gc_diversity_stats.rda"))
+```
+
+```{r}
+library(kableExtra)
+load(file = paste0(SCRATCH,"gc_diversity_stats.rda"))
+
+basic_stats<- gc_stats %>% 
+  as_tibble() %>% 
+  mutate(nCR = (MLG-1)/(N-1))
+
+basic_stats %>% 
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+
+write.csv(basic_stats, file = paste0(RESULT, "basicstats.csv"))
+```
+
+```{r, fig.height=8, fig.width=10}
+basic_stats$Pop <- factor(basic_stats$Pop, levels= unique(basic_stats$Pop))
+basic_stats %>% 
+  as.tibble() %>% 
+  pivot_longer(-c(Pop, File)) %>% 
+  filter(Pop != "Total") %>% 
+  ggplot(aes(x = Pop, y = value, col = Pop)) +
+    geom_point() +
+    facet_wrap(facets = vars(name), scales = "free") +
+  expand_limits(x = 0, y = 0) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+  
+```
+
+## Stats with poppr on genclone MLG
+
+```{r, cache=TRUE}
+# diversity stats
+gc_stats_MLG <- poppr(gc_no_rep, clonecorrect = TRUE, strata = ~Site)
+save(gc_stats_MLG, file = paste0(SCRATCH,"gc_diversity_stats_MLG.rda"))
+```
+
+```{r}
+library(kableExtra)
+load(file = paste0(SCRATCH,"gc_diversity_stats_MLG.rda"))
+
+basic_stats_MLG<- gc_stats_MLG %>% 
+  as.tibble() %>% 
+  mutate(nCR = (MLG-1)/(N-1))
+
+basic_stats_MLG %>% 
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+
+write.csv(basic_stats_MLG, file = paste0(RESULT, "basicstats_MLG.csv"))
+```
+
+```{r, fig.height=8, fig.width=10}
+basic_stats_MLG$Pop <- factor(basic_stats_MLG$Pop, levels= unique(basic_stats_MLG$Pop))
+basic_stats_MLG %>% 
+  as.tibble() %>% 
+  pivot_longer(-c(Pop, File)) %>% 
+  filter(Pop != "Total") %>% 
+  ggplot(aes(x = Pop, y = value, col = Pop)) +
+    geom_point() +
+    facet_wrap(facets = vars(name), scales = "free") +
+  expand_limits(x = 0, y = 0) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+  
+```
+
+# LINKAGE DISEQUILIBRIUM
+
+This test is useful to determine if populations are clonal (where significant disequilibrium is expected due to linkage among loci) or sexual (where linkage among loci is not expected)
+```{r}
+library("poppr")
+library("magrittr")
+
+# load data -> fir ia() we need genind or genclone object -> genclone didnt work
+load(paste0(SCRATCH, "gc_no_rep.rda"))
+load(paste0(SCRATCH, "gc_no_rep_mlg.rda"))
+
+LD_gd <- genclone2genind(gc_no_rep)
+
+LD_gd_MLG <- genclone2genind(gc_no_rep_mlg)
+```
+
+## calculate LD for each coast - compare coasts with and without clones
+
+### west coast
+```{r}
+set.seed(1)
+LD_west <- popsub(LD_gd, sublist = "ALL", exclude = c("YST", "FUR", "KAR", "HOR", "KLI", "SLI", "KRA", "NYN", "BJO"))
+LD_plot_west <- ia(LD_west, sample = 999)
+
+# we see stats close to 0: r = 0.0124 which doesnt fall into the linkage disequilibrium and shows us that these samples reproduce sexually
+```
+
+```{r}
+set.seed(2)
+LD_west_MLG <- popsub(LD_gd_MLG, sublist = "ALL", exclude = c("YST", "FUR", "KAR", "HOR", "KLI", "SLI", "KRA", "NYN", "BJO"))
+LD_plot_west_MLG <-ia(LD_west_MLG, sample = 999)
+```
+
+### east coast
+```{r}
+# takes a very long time... couldn't figure out how to speed up
+set.seed(1)
+LD_east <- popsub(LD_gd, sublist = "ALL", exclude = c("KOD", "STE", "GOT", "GRO", "HOG", "ALA"))
+LD_plot_east <- ia(LD_east, sample = 999)
+```
+
+```{r}
+set.seed(2)
+LD_east_MLG <- popsub(LD_gd_MLG, sublist = "ALL", exclude = c("KOD", "STE", "GOT", "GRO", "HOG", "ALA"))
+LD_plot_east_MLG <- ia(LD_east_MLG, sample = 999)
+```
+
+## calculate LD for each west site - compare sites with and without clones
+
+### KOD
+```{r}
+# clones no reps
+LD_KOD <- popsub(LD_gd, "KOD")
+ia(LD_KOD, sample = 999)
+
+#          Ia        p.Ia       rbarD        p.rD                                                                               
+# 28.42187450  0.00100000  0.06968563  0.00100000 
+```
+
+```{r}
+# MLG no reps
+LD_KOD_MLG <- popsub(LD_gd_MLG, "KOD")
+ia(LD_KOD_MLG, sample = 999)
+
+#        Ia       p.Ia      rbarD       p.rD          
+#6.40643932 0.02500000 0.01627867 0.02300000 
+```
+
+### STE
+```{r}
+# clones no reps
+LD_STE <- popsub(LD_gd, "STE")
+ia(LD_STE, sample = 999)
+
+#          Ia        p.Ia       rbarD        p.rD                                                                               
+# 5.468466438 0.001000000 0.009585033 0.001000000 
+```
+
+```{r}
+LD_STE_MLG <- popsub(LD_gd_MLG, "STE")
+ia(LD_STE_MLG, sample = 999)
+
+#          Ia         p.Ia        rbarD         p.rD                                                                                                                                              
+# 0.4920443227 0.0390000000 0.0008563595 0.0390000000 
+```
+
+### GOT
+```{r}
+# clones no reps
+LD_GOT <- popsub(LD_gd, "GOT")
+ia(LD_GOT, sample = 999)
+
+#         Ia        p.Ia       rbarD        p.rD                                                                                                                                                  
+# 0.762711864 0.102000000 0.003598616 0.100000000 
+```
+
+```{r}
+LD_GOT_MLG <- popsub(LD_gd_MLG, "GOT")
+ia(LD_GOT_MLG, sample = 999)
+
+#         Ia        p.Ia       rbarD        p.rD                                                                                                                                            
+# 0.762711864 0.125000000 0.003598616 0.118000000
+```
+
+### GRO
+```{r}
+# clones no reps
+LD_GRO <- popsub(LD_gd, "GRO")
+ia(LD_GRO, sample = 999)
+
+#         Ia       p.Ia      rbarD       p.rD                                                                     
+# 43.5636542  0.0010000  0.4150484  0.0010000
+```
+
+```{r}
+LD_GRO_MLG <- popsub(LD_gd_MLG, "GRO")
+ia(LD_GRO_MLG, sample = 999)
+
+#    Ia  p.Ia rbarD  p.rD 
+#   NA    NA    NA    NA 
+```
+
+### HOG
+```{r}
+# clones no reps
+LD_HOG <- popsub(LD_gd, "HOG")
+ia(LD_HOG, sample = 999)
+
+#          Ia        p.Ia       rbarD        p.rD                                                            
+# 12.36183150  0.00100000  0.03354375  0.00100000 
+```
+
+```{r}
+LD_HOG_MLG <- popsub(LD_gd_MLG, "HOG")
+ia(LD_HOG_MLG, sample = 999)
+
+#         Ia        p.Ia       rbarD        p.rD                                                            
+# 1.256800046 0.003000000 0.003471862 0.003000000
+```
+
+
+### ALA
+```{r}
+# clones no reps
+LD_ALA <- popsub(LD_gd, "ALA")
+ia(LD_ALA, sample = 999)
+
+#         Ia       p.Ia      rbarD       p.rD                                                                
+# 6.59209857 0.00100000 0.01410926 0.00100000
+```
+
+```{r}
+LD_ALA_MLG <- popsub(LD_gd_MLG, "ALA")
+ia(LD_ALA_MLG, sample = 999)
+
+#         Ia        p.Ia       rbarD        p.rD                                                            
+# 1.434140043 0.121000000 0.003364167 0.133000000 
+```
+
+## calculate LD for each east site - compare sites with and without clones
+
+### YST
+```{r}
+# clones no reps
+LD_YST <- popsub(LD_gd, "YST")
+ia(LD_YST, sample = 999)
+
+#         Ia        p.Ia       rbarD        p.rD                                                                  
+# 22.42565715  0.00100000  0.09808751  0.00100000 
+```
+
+```{r}
+LD_YST_MLG <- popsub(LD_gd_MLG, "YST")
+ia(LD_YST_MLG, sample = 999)
+
+#         Ia        p.Ia       rbarD        p.rD                                                                  
+# 1.069237511 0.554000000 0.006120415 0.557000000 
+```
+
+### FUR
+```{r}
+# clones no reps
+LD_FUR <- popsub(LD_gd, "FUR")
+ia(LD_FUR, sample = 999)
+
+#          Ia        p.Ia       rbarD        p.rD                                                            
+# 105.3359538   0.0010000   0.7221526   0.0010000 
+```
+
+```{r}
+LD_FUR_MLG <- popsub(LD_gd_MLG, "FUR")
+ia(LD_FUR_MLG, sample = 999)
+
+# Ia  p.Ia rbarD  p.rD 
+# NA    NA    NA    NA 
+```
+
+### KAR
+```{r}
+# clones no reps
+LD_KAR <- popsub(LD_gd, "KAR")
+ia(LD_KAR, sample = 999)
+
+#         Ia       p.Ia      rbarD       p.rD                                                                
+# 34.1007156  0.0010000  0.1873399  0.0010000 
+```
+
+```{r}
+LD_KAR_MLG <- popsub(LD_gd_MLG, "KAR")
+ia(LD_KAR_MLG, sample = 999)
+
+#   Ia  p.Ia rbarD  p.rD 
+#   NA    NA    NA    NA 
+```
+
+### KLI
+```{r}
+# clones no reps
+LD_KLI <- popsub(LD_gd, "KLI")
+ia(LD_KLI, sample = 999)
+
+#         Ia        p.Ia       rbarD        p.rD                                                            
+# 11.79841851  0.00100000  0.05061003  0.00100000 
+```
+
+```{r}
+LD_KLI_MLG <- popsub(LD_gd_MLG, "KLI")
+ia(LD_KLI_MLG, sample = 999)
+
+#         Ia        p.Ia       rbarD        p.rD                                                            
+# 1.457461407 0.018000000 0.006986258 0.018000000 
+```
+
+### HOR
+```{r}
+# clones no reps
+LD_HOR <- popsub(LD_gd, "HOR")
+ia(LD_HOR, sample = 999)
+
+#        Ia       p.Ia      rbarD       p.rD                                                            
+# 9.84669959 0.00100000 0.05335167 0.00100000
+```
+
+```{r}
+LD_HOR_MLG <- popsub(LD_gd_MLG, "HOR")
+ia(LD_HOR_MLG, sample = 999)
+
+#    Ia  p.Ia rbarD  p.rD 
+#   NA    NA    NA    NA 
+```
+
+### SLI
+```{r}
+# clones no reps
+LD_SLI <- popsub(LD_gd, "SLI")
+ia(LD_SLI, sample = 999)
+
+#        Ia       p.Ia      rbarD       p.rD                                                                
+# 30.2822954  0.0010000  0.1281995  0.0010000
+```
+
+```{r}
+LD_SLI_MLG <- popsub(LD_gd_MLG, "SLI")
+ia(LD_SLI_MLG, sample = 999)
+
+#         Ia       p.Ia      rbarD       p.rD                                                                
+# 38.3392857  0.0010000  0.2665094  0.0010000 
+```
+
+### KRA
+```{r}
+# clones no reps
+LD_KRA <- popsub(LD_gd, "KRA")
+ia(LD_KRA, sample = 999)
+
+#         Ia       p.Ia      rbarD       p.rD                                                                
+# 2.81044876 0.00100000 0.05679155 0.00100000 
+```
+
+```{r}
+LD_KRA_MLG <- popsub(LD_gd_MLG, "KRA")
+ia(LD_KRA_MLG, sample = 999)
+
+#    Ia  p.Ia rbarD  p.rD 
+#   NA    NA    NA    NA 
+```
+
+### NYN
+```{r}
+# clones no reps
+LD_NYN <- popsub(LD_gd, "NYN")
+ia(LD_NYN, sample = 999)
+
+#        Ia      p.Ia     rbarD      p.rD                                                                    
+# 35.498142  0.001000  0.189073  0.001000 
+```
+
+```{r}
+LD_NYN_MLG <- popsub(LD_gd_MLG, "NYN")
+ia(LD_NYN_MLG, sample = 999)
+
+#        Ia       p.Ia      rbarD       p.rD                                                                                                                                           
+# 9.53020134 0.00100000 0.06439325 0.00100000 
+```
+
+### BJO
+```{r}
+# clones no reps
+LD_BJO <- popsub(LD_gd, "BJO")
+ia(LD_BJO, sample = 999)
+
+#         Ia       p.Ia      rbarD       p.rD                                                                                                                                           
+# 0.91030882 0.00100000 0.01054078 0.00100000 
+```
+
+```{r}
+LD_BJO_MLG <- popsub(LD_gd_MLG, "BJO")
+ia(LD_BJO_MLG, sample = 999)
+
+# Ia  p.Ia rbarD  p.rD 
+#   NA    NA    NA    NA 
+```

@@ -1,0 +1,184 @@
+---
+title: "Reading and converting"
+output:
+  html_notebook:
+    toc: yes
+    toc_depth: 3  # upto three depths of headings (specified by #, ## and ###)
+    number_sections: true  ## if you want number sections at each table header
+    toc_float: true
+    theme: united  # many options for theme, this one is my favorites.
+    highlight: tango  # specifies the syntax highlighting style
+#editor_options: 
+  #chunk_output_type: console
+---
+
+```{r setup}
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+```
+
+Setting up paths
+```{r paths}
+HOME <- "~/Library/CloudStorage/Dropbox/Steffi_Zostera_analysis_2023/Monitoring2023/Monitoring_eelgrass_scripts_for_figshare" # directory 
+DATA <- paste0(HOME, "/data/") # data folder
+RESULT <- paste0(HOME, "/results/") #result folder
+SCRATCH <- paste0(HOME, "/scratch/") #result folder
+
+
+# Paths to files
+#------------------- DATASET USED FOR POPPR, PCA, LEA
+# 5771 SNPs 260 samples -> minus HOG-12-rep! --> 259 indv
+vcf_file <- paste0(DATA, "zostera_monitoring_230504_5771_SNPs_all_with_replicates.vcf")
+
+pop_info <- paste0(DATA, "pop_info.csv")
+```
+
+Loading packages
+```{r}
+library(vcfR)
+library(tidyverse)
+library(adegenet)
+library(fishualize)
+library(poppr)
+library(dartR)
+# install diveRsity from github
+#devtools::install_github("kkeenan02/diveRsity")
+library("diveRsity")
+library(kableExtra)
+library(ape)
+```
+
+# Converting 25% vcf
+
+```{r}
+# read vcf
+vcf_zostera <- read.vcfR(vcf_file)
+
+# transfrom vcf file to genind object
+gl_zostera <- vcfR2genlight(vcf_zostera)
+```
+
+```{r}
+# I removed UJ-3099-HOG-12, because there was no matching pair and we have a matching HOG 12 pair in VF-3360
+# list of which individuals to remove
+rep2rm <- c("UJ-3099-HOG-12-rep")
+indlist_x <- substr(indNames(gl_zostera), 1, 18)
+
+gl_zostera <- gl_zostera[!indlist_x %in% rep2rm]
+```
+
+```{r}
+# make list of population names and individual names
+bamlist <- indNames(gl_zostera)
+save(bamlist, file=paste0(SCRATCH, "bamlist.rda"))
+poplist_x <- as.factor(substr(indNames(gl_zostera), 9, 11))
+poplist <- factor(poplist_x, levels = unique(poplist_x)) # reordering
+indlist <- substr(indNames(gl_zostera), 9, 18)
+```
+
+```{r}
+#set pop in genlight object
+gl_zostera@pop <- poplist
+indNames(gl_zostera) <- indlist
+```
+
+```{r}
+# Merge the csv with meta data with pop and individual data form vcf so they are ordered the same way.
+pop_info_df <- read.csv(pop_info, stringsAsFactors = TRUE, sep = ";")
+pop_df <- tibble(site = pop(gl_zostera), indv = indNames(gl_zostera))
+meta_df <- left_join(pop_df, pop_info_df, by = "site")
+write.csv(meta_df, paste0(DATA, "zostera_meta.csv"))
+
+#add to genlight object
+gl_zostera@other$ind.metrics <- meta_df
+```
+
+```{r}
+# extract and assign strata to genlight
+zostera_strata <- gl_zostera$other$ind.metrics %>% 
+  rename(Region = region) %>% 
+  mutate(Site = site_full) %>% 
+  select(Region, Site)
+
+strata(gl_zostera) <- zostera_strata
+```
+
+# before the following step we have 5,771 SNPS -> after we have 2,138 binary SNPs
+```{r}
+#remove monomorphic loci
+# A genlight object with monomorphic (and all NA) loci removed.
+gl_zostera <- gl.filter.monomorphs(gl_zostera)
+```
+
+```{r}
+# recalculate metrics
+gl_zostera <- gl.recalc.metrics(gl_zostera)
+```
+
+```{r}
+# compliance checks
+gl_zostera$other$loc.metrics <- as.data.frame(gl_zostera$other$loc.metrics)
+
+gl_zostera@ploidy <- as.integer(rep.int(2, length(indNames(gl_zostera))))
+
+gl_zostera <- gl.compliance.check(gl_zostera)
+```
+
+```{r}
+# convert from genlight to genind
+gen_zostera <- gl2gi(gl_zostera)
+```
+
+```{r}
+# assign strata to genind
+strata(gen_zostera) <- strata(gl_zostera)
+```
+
+# Removing replicates
+```{r}
+#list of reps
+reps <- grep('-rep', indNames(gl_zostera), value = TRUE)
+# some replicates might have been removed in filtering
+reps2 <- indNames(gl_zostera)[indNames(gl_zostera) %in% str_replace(reps, "-rep","")] 
+# list of reps to remove
+reps2rm <- paste0(reps2, "-rep")
+gl_zostera_uniq <- gl_zostera[!indNames(gl_zostera) %in% reps2rm]
+```
+
+
+```{r}
+# convert from genlight to genind
+gen_zostera_uniq <- gl2gi(gl_zostera_uniq)
+# assign strata to genind
+strata(gen_zostera_uniq) <- strata(gl_zostera_uniq)
+```
+
+## output
+```{r}
+# save with 25% an replicate 259 genotypes and 2,138 SNPs
+gl_zostera_25 <- gl_zostera
+save(gl_zostera_25, file = paste0(SCRATCH, "gl_zostera_25.rda"))
+gen_zostera_25 <- gen_zostera
+save(gen_zostera_25, file = paste0(SCRATCH, "gen_zostera_25.rda"))
+
+# rename without replicate and 25% 241 genotypes and 2,138 SNPs
+gl_zostera_25_uniq <- gl_zostera_uniq
+save(gl_zostera_25_uniq, file = paste0(SCRATCH, "gl_zostera_25_uniq.rda"))
+gen_zostera_25_uniq <- gen_zostera_uniq
+save(gen_zostera_25_uniq, file = paste0(SCRATCH, "gen_zostera_25_uniq.rda"))
+```
+
+# keeping monomorphic sites
+```{r}
+### if you want to keep monomorphic sites dont filter for monomorphs further up
+# save with 25% an replicate 259 genotypes
+#gl_zostera_25 <- gl_zostera
+#save(gl_zostera_25, file = paste0(SCRATCH, "gl_zostera_25_mono.rda"))
+#gen_zostera_25 <- gen_zostera
+#save(gen_zostera_25, file = paste0(SCRATCH, "gen_zostera_25_mono.rda"))
+
+# rename without replicate and 25% 241 genotypes
+#gl_zostera_25_uniq <- gl_zostera_uniq
+#save(gl_zostera_25_uniq, file = paste0(SCRATCH, "gl_zostera_25_uniq_mono.rda"))
+#gen_zostera_25_uniq <- gen_zostera_uniq
+#save(gen_zostera_25_uniq, file = paste0(SCRATCH, "gen_zostera_25_uniq_mono.rda"))
+```

@@ -1,0 +1,426 @@
+---
+title: "wingen - genetic diversity map"
+output:
+  html_notebook:
+    toc: yes
+    toc_depth: 3  # upto three depths of headings (specified by #, ## and ###)
+    number_sections: true  ## if you want number sections at each table header
+    toc_float: true
+    theme: united  # many options for theme, this one is my favorites.
+    highlight: tango  # specifies the syntax highlighting style
+    code_folding: hide
+#editor_options: 
+  #chunk_output_type: console
+---
+
+```{r setup}
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+```
+
+```{r set up}
+HOME <- "~/Library/CloudStorage/Dropbox/Steffi_Zostera_analysis_2023/Monitoring2023/Monitoring_eelgrass_scripts_for_figshare" # directory 
+DATA <- paste0(HOME, "/data/") # data folder
+RESULT <- paste0(HOME, "/results/") #result folder
+SCRATCH <- paste0(HOME, "/scratch/") #result folder
+pop_info <- paste0(DATA, "pop_info.csv") # population information
+```
+
+```{r}
+#install.packages("devtools")
+#devtools::install_github("AnushaPB/wingen", build_vignettes = TRUE)
+
+# load library
+library("wingen")
+library("vcfR")
+library("tidyverse")
+library("adegenet")
+library("raster")
+library("sf")
+library("terra")
+library("viridis")
+library("SpatialKDE")
+library("rgdal")
+library("spacetime")
+```
+
+# Workflow
+The core function of this package is window_gd(), which takes as inputs a vcfR object (or a path to a .vcf file), sample coordinates (as a data.frame, matrix, or sf object), and a raster layer (as a SpatRaster or RasterLayer) which the moving window will slide across. Users can control the genetic diversity statistic that is calculated (stat), the window dimensions (wdim), the aggregation factor to use on the raster (fact), whether to perform rarefaction (rarify), and other aspects of the moving window calculations. Additional arguments for this function are described in the vignette and function documentation.
+# load data
+```{r}
+# load vcf file with all missingness removed and containing MLGs but no replicates
+vcf <- paste0(DATA, "zostera_monitoring_230504_2138_SNPs_81_MLLs.vcf")
+vcf_MLG <- read.vcfR(vcf)
+
+# shape file for ocean
+shp <- readOGR(dsn = "~/Library/CloudStorage/Dropbox/Steffi_Zostera_analysis_2023/Monitoring2023/Monitoring_eelgrass_scripts_for_figshare/ne_10m_ocean", layer = "ne_10m_ocean")
+```
+
+# 1. window_gd() to generate moving window maps of heatmaps - can be used for all heatmaps: BUT coordinates # must align with # of columns in table (R, ND, etc)
+```{r}
+# (https://proj.org/operations/projections/goode.html):
+#vignette("wingen-vignette")
+
+##coordinates without GOT:
+latlong_df <- paste0(DATA, "Lat_long_clonal_richness_MLG.csv")
+coords <- read.csv(latlong_df, stringsAsFactors = TRUE, sep = ";")
+coords_longlat <- st_as_sf(coords, coords = c("x","y"), crs = "+proj=longlat")
+
+##coordinates including GOT:
+latlong_df_all <- paste0(DATA, "Lat_long_wingen_MLG.csv")
+coords_all <- read.csv(latlong_df_all, stringsAsFactors = TRUE, sep = ";")
+coords_longlat_all <- st_as_sf(coords_all, coords = c("x","y"), crs = "+proj=longlat")
+```
+
+```{r}
+# make a raster layer out of your coordinates WITHOUT GOT
+raster3 <- coords_to_raster(coords_longlat, buffer = 1, disagg = 14, plot = TRUE)
+
+preview_gd(raster3, coords_longlat, wdim = 13, fact = 1, sample_count = TRUE, min_n = 2)
+```
+
+```{r}
+# make a raster layer out of your coordinates WITH GOT
+raster4 <- coords_to_raster(coords_longlat_all, buffer = 1, disagg = 14, plot = TRUE)
+
+preview_gd(raster4, coords_longlat_all, wdim = 13, fact = 1, sample_count = TRUE, min_n = 2)
+```
+
+
+# 1.1. clonal richness - without GOT -> outlier
+```{r}
+# with the window_general function we can display a table of our choice
+# load table i want to use
+crs(raster3) = crs(coords_longlat)
+
+clone_info <- paste0(SCRATCH, "richnes_list_per_indv_MLL.csv")
+clone_list_MLL <- read.csv(clone_info, stringsAsFactors = TRUE, sep = ";")
+
+clonal_window <- window_general(clone_list_MLL$R,
+  coords,
+  raster3,
+  stat = mean,
+  wdim = 5, # determine the sensitivity of results
+  fact = 3, #increase --> decreases number of cells
+  rarify_n = 1, # number of samples to rarify
+  rarify_nit = 2, # number of iterations for rarefaction
+  rarify = TRUE, # perform rarefaction = recommended
+  na.rm = TRUE,
+  L = 100 #scale -> use "100" and you get the values in 0.30 i.e.
+  )
+
+par(pty = "s")
+plot_gd(clonal_window, main = "Mean raster value")
+```
+
+# plot clonal richness
+```{r}
+# Use plot_gd() to plot the genetic diversity layer and plot_count() to plot the sample counts layer
+par(mfrow = c(1, 2), oma = rep(0, 4), mar = rep(0, 4), pty = "s")
+
+# The plot_gd function plots the genetic diversity layer
+plot_gd(clonal_window, main = "Moving window clones", legend.width = 1.5)
+
+# The plot_count function plots the sample count layer
+plot_count(clonal_window, main = "Moving window sample counts", legend.width = 1.5)
+```
+
+# 1.2. nucleotide diversity
+```{r}
+# here we feed the function with a VCF file
+# Run moving window calculations of pi with rarefaction
+crs(raster4) = crs(coords_longlat_all)
+
+wgd_ND <- window_gd(vcf_MLG,
+  coords_longlat_all,
+  raster4,
+  stat = "pi", # calculate nucleotide diversity from vcf file input
+  wdim = 7, # determine the sensitivity of results
+  fact = 3, #increase --> decreases number of cells
+  rarify = TRUE, # perform rarefaction = recommended
+  rarify_n = 4, # number of samples to rarify
+  rarify_nit = 5, # number of iterations for rarefaction
+  L = 100 # nucleotide diversity scale -> use "100" and you get the values in 0.30 i.e.
+)
+```
+
+# plot nucleotide diversity
+```{r} 
+# Use plot_gd() to plot the genetic diversity layer and plot_count() to plot the sample counts layer
+par(mfrow = c(1, 2), oma = rep(0, 4), mar = rep(0, 4), pty = "s")
+
+# The plot_gd function plots the genetic diversity layer
+plot_gd(wgd_ND, main = "Moving window pi", legend.width = 1.5)
+
+# The plot_count function plots the sample count layer
+plot_count(wgd_ND, main = "Moving window sample counts", legend.width = 1.5)
+```
+
+# 1.3. Private alleles
+```{r}
+# with the window_general function we can display a table of our choice
+# load table i want to use
+crs(raster4) = crs(coords_longlat_all)
+
+pa_info <- paste0(SCRATCH, "Pa_list_per_indv_MLL.csv")
+pa_list_MLL <- read.csv(pa_info, stringsAsFactors = TRUE, sep = ";")
+
+pa_window <- window_general(pa_list_MLL$Pa,
+  coords_longlat_all,
+  raster4,
+  stat = mean,
+  wdim = 5, # determine the sensitivity of results
+  fact = 3, #increase --> decreases number of cells
+  rarify_n = 1, # number of samples to rarify
+  rarify_nit = 2, # number of iterations for rarefaction
+  rarify = TRUE, # perform rarefaction = recommended
+  na.rm = TRUE,
+  L = 100 #scale -> use "100" and you get the values in 0.30 i.e.
+  )
+
+par(pty = "s")
+plot_gd(pa_window, main = "Mean raster value")
+```
+
+# plot pa
+```{r}
+# Use plot_gd() to plot the genetic diversity layer and plot_count() to plot the sample counts layer
+par(mfrow = c(1, 2), oma = rep(0, 4), mar = rep(0, 4), pty = "s")
+
+# The plot_gd function plots the genetic diversity layer
+plot_gd(pa_window, main = "Moving window Pa", legend.width = 1.5)
+
+# The plot_count function plots the sample count layer
+plot_count(pa_window, main = "Moving window sample counts", legend.width = 1.5)
+```
+
+# 1.3. Polymorphic sites
+```{r}
+# with the window_general function we can display a table of our choice
+# load table i want to use
+crs(raster4) = crs(coords_longlat_all)
+
+pol_info <- paste0(SCRATCH, "nPol_list_per_indv_MLL.csv")
+pol_list_MLL <- read.csv(pol_info, stringsAsFactors = TRUE, sep = ";")
+
+pol_window <- window_general(pol_list_MLL$uPol,
+  coords_longlat_all,
+  raster4,
+  stat = mean,
+  wdim = 5, # determine the sensitivity of results
+  fact = 3, #increase --> decreases number of cells
+  rarify_n = 1, # number of samples to rarify
+  rarify_nit = 2, # number of iterations for rarefaction
+  rarify = TRUE, # perform rarefaction = recommended
+  na.rm = TRUE,
+  L = 100 #scale -> use "100" and you get the values in 0.30 i.e.
+  )
+
+par(pty = "s")
+plot_gd(pol_window, main = "Mean raster value")
+```
+
+# plot clonal richness
+```{r}
+# Use plot_gd() to plot the genetic diversity layer and plot_count() to plot the sample counts layer
+par(mfrow = c(1, 2), oma = rep(0, 4), mar = rep(0, 4), pty = "s")
+
+# The plot_gd function plots the genetic diversity layer
+plot_gd(pol_window, main = "Moving window uPol", legend.width = 1.5)
+
+# The plot_count function plots the sample count layer
+plot_count(pol_window, main = "Moving window sample counts", legend.width = 1.5)
+```
+
+# 2. krig_gd() to use kriging to interpolate the moving window maps
+## 2.1 kridge
+### 2.1.1. CLONAL MAP
+```{r}
+crs(clonal_window) = ""
+crs(raster3) = ""
+
+#crs(raster3) = crs(clonal_window)
+
+# Note: this step can take a little while
+# index = 1 kriges the first layer in wgd (the genetic diversity layer)
+# using ordinary kringing
+kgd <- krig_gd(clonal_window, index = 1, raster3, disagg_grd = 3)
+
+par(pty = "s")
+plot_gd(kgd, col = mako(20), main = "Kriged R")
+#plot_gd(kgd, col = grey.colors(20), main = "Kriged R")
+plot_gd
+```
+
+# clonal
+```{r}
+# Note: this step can take a little while
+# index = 1 kriges the first layer in wgd (the genetic diversity layer)
+kgd_clones <- krig_gd(clonal_window, index = 1, raster3, disagg_grd = 3)
+#> [using ordinary kriging]
+
+par(pty = "s")
+plot_gd(kgd_clones, col = mako(20), main = "Kriged R")
+```
+
+### 2.1.2. ND MAP
+```{r}
+crs(wgd_ND) = ""
+crs(raster4) = ""
+
+#crs(raster3) = crs(clonal_window)
+
+# Note: this step can take a little while
+# index = 1 kriges the first layer in wgd (the genetic diversity layer)
+# using ordinary kringing
+kgd_ND <- krig_gd(wgd_ND, index = 1, raster4, disagg_grd = 3)
+
+par(pty = "s")
+plot_gd(kgd_ND, col = mako(20), main = "Kriged ND")
+#plot_gd(kgd_ND, col = grey.colors(20), main = "Kriged ND")
+plot_gd
+```
+
+# nucleotide diversity
+```{r}
+# Note: this step can take a little while
+# index = 1 kriges the first layer in wgd (the genetic diversity layer)
+kgd_ND_2 <- krig_gd(wgd_ND, index = 1, raster4, disagg_grd = 5)
+#> [using ordinary kriging]
+
+par(pty = "s")
+plot_gd(kgd_ND_2, col = mako(20), main = "Kriged pi")
+```
+
+### 2.1.3. Pa
+```{r}
+crs(pa_window) = ""
+crs(raster4) = ""
+
+#crs(raster3) = crs(clonal_window)
+
+# Note: this step can take a little while
+# index = 1 kriges the first layer in wgd (the genetic diversity layer)
+# using ordinary kringing
+kgd_Pa <- krig_gd(pa_window, index = 1, raster4, disagg_grd = 3)
+
+par(pty = "s")
+plot_gd(kgd_Pa, col = mako(20), main = "Kriged Pa")
+#plot_gd(kgd_Pa, col = grey.colors(20), main = "Kriged Pa")
+plot_gd
+```
+
+# Private alleles
+```{r}
+# Note: this step can take a little while
+# index = 1 kriges the first layer in wgd (the genetic diversity layer)
+kgd_Pa_2 <- krig_gd(pa_window, index = 1, raster4, disagg_grd = 5)
+#> [using ordinary kriging]
+
+par(pty = "s")
+plot_gd(kgd_Pa_2, col = mako(20), main = "Kriged Pa")
+```
+
+### 2.1.4. Pol
+```{r}
+crs(pol_window) = ""
+crs(raster4) = ""
+
+#crs(raster3) = crs(clonal_window)
+
+# Note: this step can take a little while
+# index = 1 kriges the first layer in wgd (the genetic diversity layer)
+# using ordinary kringing
+kgd_Pol <- krig_gd(pol_window, index = 1, raster4, disagg_grd = 3)
+
+par(pty = "s")
+plot_gd(kgd_Pol, col = mako(20), main = "Kriged Pol")
+#plot_gd(kgd_Pol, col = grey.colors(20), main = "Kriged Pol")
+plot_gd
+```
+
+# Polymorphic sites
+```{r}
+# Note: this step can take a little while
+# index = 1 kriges the first layer in wgd (the genetic diversity layer)
+kgd_Pol_2 <- krig_gd(pol_window, index = 1, raster4, disagg_grd = 5)
+#> [using ordinary kriging]
+
+par(pty = "s")
+plot_gd(kgd_Pol_2, col = mako(20), main = "Kriged Pol")
+```
+
+# 3. mask_gd() to mask areas of the maps from (1) and (2) (e.g., to exclude areas outside the study region)
+Next, we mask the resulting kriged layers. Masking can be performed using a variety of methods.
+
+## 3.1 Method 1
+Mask using the carrying capacity layer to exclude any areas where the carrying capacity is lower than 0.01. Alternatively, one could use a species distribution model or habitat suitability model to exclude areas where the probability of presence is very low:
+```{r}
+# disaggregate lotr_lyr to make it the same resolution as kgd before masking
+## note: lotr_lyr is a RasterLayer which we convert to a SpatRaster with rast()
+#mask_lyr <- disagg(rast(raster3), 2)
+#mgd <- mask_gd(kgd, mask_lyr, minval = 0.01)
+
+#par(pty = "s")
+#plot_gd(mgd, col = cividis(100), main = "Kriged & carrying capacity masked pi")
+
+#plot(kgd);lines(shp);points(coords)
+```
+
+## 3.2 Method 2 - worked for my data
+Mask the layer using a species range map (in this case, an sf polygon) to exclude areas falling outside the species range.
+### 3.2.1. CLONAL MAP
+```{r}
+# Mask results that fall outside of the "range"
+library("ggplot2")
+library(RColorBrewer)
+
+plot(shp)
+mgd3 <- mask_gd(kgd_clones, shp)
+
+par(pty = "s")
+?points
+plot_gd(mgd3, col = mako(20), main = "MLL Clonal"); points(coords, col="red")
+```
+
+### 3.2.2. ND MAP
+```{r}
+# Mask results that fall outside of the "range"
+library("ggplot2")
+library(RColorBrewer)
+
+plot(shp)
+mgd_ND <- mask_gd(kgd_ND, shp)
+
+par(pty = "s")
+
+plot_gd(mgd_ND, col = mako(20), main = "MLL nucleotide diversity"); points(coords, col="red")
+```
+
+### 3.2.3. Pa Map
+```{r}
+# Mask results that fall outside of the "range"
+library("ggplot2")
+library(RColorBrewer)
+
+plot(shp)
+mgd_Pa <- mask_gd(kgd_Pa_2, shp)
+
+par(pty = "s")
+
+plot_gd(mgd_Pa, col = mako(20), main = "MLL Private alleles"); points(coords, col="red")
+```
+
+### 3.2.4. Pol Map
+```{r}
+# Mask results that fall outside of the "range"
+library("ggplot2")
+library(RColorBrewer)
+
+plot(shp)
+mgd_Pol <- mask_gd(kgd_Pol_2, shp)
+
+par(pty = "s")
+
+plot_gd(mgd_Pol, col = mako(20), main = "MLL Polymorphic sites"); points(coords, col="red")
+```
+

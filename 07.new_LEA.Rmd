@@ -1,0 +1,379 @@
+---
+title: "LEA"
+output: 
+  html_notebook: 
+    toc: yes
+    code_folding: hide
+---
+# set up
+```{r set up}
+HOME <- "~/Library/CloudStorage/Dropbox/Steffi_Zostera_analysis_2023/Monitoring2023/Monitoring_eelgrass_scripts_for_figshare" # directory 
+DATA <- paste0(HOME, "/data/") # data folder
+RESULT_LEA <- paste0(HOME, "/results/LEA/") #RESULT_LEA folder
+RESULT <- paste0(HOME, "/results/") #RESULT_LEA folder
+SCRATCH <- paste0(HOME, "/scratch/") #RESULT_LEA folder
+pop_info <- paste0(DATA, "pop_info.csv")
+```
+
+```{r include=FALSE}
+library(tidyverse)
+library(adegenet)
+library(vcfR)
+library(fishualize)
+library(LEA)
+library(patchwork)
+library(poppr)
+library(dartR)
+```
+
+# 25%missingness
+## Load data
+```{r}
+vcf_file_zostera25 <- paste0(DATA, "zostera_monitoring_230504_2138_SNPs_81_MLLs.vcf")
+genofile <- vcf2geno(input.file = "data/zostera_monitoring_230504_2138_SNPs_81_MLLs.vcf", output.file = "data/zostera_25.geno")
+
+
+# read vcf
+vcf_zostera25 <- read.vcfR(vcf_file_zostera25)
+vcf_zostera25
+
+# transfrom vcf file to genind object
+gen_zostera25 <- vcfR2genind(vcf_zostera25)
+```
+
+# genind object
+```{r}
+# make list of population names and individual names
+poplist_x <- as.factor(substr(indNames(gen_zostera25), 9, 11))
+poplist <- factor(poplist_x, levels = unique(poplist_x)) # reordering
+indlist <- substr(indNames(gen_zostera25), 9, 18)
+
+
+#set pop in genind object
+gen_zostera25@pop <- poplist
+indNames(gen_zostera25) <- indlist
+```
+
+```{r}
+# merge the csv with meta data with pop and individual data form vcf so they are ordered the same way.
+pop_info_df <- read.csv(pop_info, stringsAsFactors = TRUE, sep = ";")
+pop_df <- tibble(site = factor(poplist, levels = unique(poplist)), indv = factor(indlist, levels = unique(indlist)))
+meta_df <- left_join(pop_df, pop_info_df, by = "site")
+
+#add to genlight object
+gen_zostera25@other$ind.metrics <- meta_df
+
+save(gen_zostera25, file = paste0(SCRATCH, "gen_zostera25.rda"))
+```
+
+## run LEA
+```{r, eval=FALSE}
+project <- snmf(genofile,
+                K = 1:15,
+                entropy = TRUE,
+                repetitions = 3,
+                project = "new")
+
+save(project, file = paste0(SCRATCH, "K1-15.rda"))
+```
+
+```{r}
+project2 <- load.snmfProject(paste0(DATA,"zostera_25.snmfProject"))
+load(paste0(SCRATCH,"K1-15.rda"))
+```
+
+```{r}
+plot(project2, col = transp("steelblue4"), pch = 19)
+```
+
+```{r}
+#extract the probability matrice for the different K
+
+qmatrix <- list_along(1:15) # create empty list of 15 items
+
+for(i in 1:15){
+  best <- which.min(cross.entropy(project2, K = i)) # select best run
+  qmatrix[[i]] <- Q(project2, K = i, run = best) # use best run and add to list
+}
+```
+
+```{r}
+# add population and individual info to the tables and make tidy with gather
+
+cluster <- list_along(1:length(qmatrix)) # create empty list 
+for(i in 1:length(qmatrix)){
+  cluster[[i]] <- qmatrix[[i]] %>%
+    as.data.frame() %>%
+    mutate(pop= factor(poplist, levels = unique(poplist))) %>% # for when using pop code
+    mutate(pop_full = factor(gen_zostera25@other$ind.metrics$site_full, levels = unique(gen_zostera25@other$ind.metrics$site_full))) %>% 
+    mutate(indv = factor(indlist, levels= unique(indlist))) %>%
+    gather(key = "Cluster", value = "Admixture",  -pop, -indv, -pop_full, factor_key = TRUE) %>%
+    group_by(pop)
+}
+
+save(cluster, file=paste0(SCRATCH, "cluster.rda"))
+```
+
+```{r}
+load(file=paste0(SCRATCH, "cluster.rda"))
+```
+
+## Plot options
+
+### Horizontal
+
+```{r, fig.height=2, fig.width=18, cache=TRUE}
+# for loop to plot LEA
+plot_lea <- list_along(1:length(cluster)) # create empty list 
+for(i in 1:length(cluster)){
+  plot_lea[[i]] <- ggplot(
+    cluster[[i]], aes(x = indv, y=Admixture, fill=Cluster)) +
+    geom_bar(stat = "identity", position = "fill", width = 1) +
+    facet_grid(~pop, switch = "x", scales = "free_x", space = "free") +
+    theme_minimal() + 
+    labs(x = "Individuals", title = paste0("K=", i), y = "Admixture") +
+    scale_fill_fish_d(option = "Hypsypops_rubicundus") +
+    scale_color_fish_d(option = "Hypsypops_rubicundus") +
+    scale_y_continuous(expand = c(0, 0)) +
+    scale_x_discrete(expand = expansion(add = 1)) +
+    theme(
+      panel.spacing.x = unit(0.1, "lines"),
+      axis.text.x = element_blank(),
+      panel.grid = element_blank(),
+      #strip.text.x = element_blank(),
+      legend.position = "none",
+      axis.title.x = element_blank(),
+      text = element_text(size = 20, colour = "black"),
+      axis.text.y = element_text(size = 16, colour = "black"))
+  print(plot_lea[[i]])
+  ggsave(plot_lea[[i]], file = paste0(RESULT,"lea_K", i, ".png"), width = 40, height = 8, units  ="cm", dpi=300)
+}
+```
+
+# Best K
+
+```{r, fig.height=3, fig.width=20}
+(K2_lab <- ggplot(cluster[[2]], aes(x = indv, y=Admixture, fill=Cluster)) +
+    geom_bar(stat = "identity", position = "fill", width = 1) +
+    facet_grid(~pop, switch = "x", scales = "free_x", space = "free") +
+    theme_minimal() + 
+    labs(x = "Individuals", y = "K=2") +
+#    scale_fill_manual(values =  c("#FDB462","#80B1D3")) +
+    scale_fill_manual(values =  c("#E4C200FF","#22196FFF")) +
+#    scale_fill_manual(values =  c("#0C59FEFF","#FC0F00FF")) +
+    scale_y_continuous(expand = c(0, 0)) +
+    scale_x_discrete(expand = expansion(add = 1)) +
+    theme(
+      panel.spacing.x = unit(0.1, "lines"),
+      axis.text.x = element_blank(),
+      panel.grid = element_blank(),
+      strip.text.x = element_blank(),
+      legend.position = "none",
+      axis.title.x = element_blank(),
+      text = element_text(size = 18, colour = "black"),
+      axis.text.y = element_text(size = 16, colour = "black")))
+```
+
+```{r, fig.height=3, fig.width=20}
+(K3_lab <- ggplot(cluster[[3]], aes(x = indv, y=Admixture, fill=Cluster)) +
+    geom_bar(stat = "identity", position = "fill", width = 1) +
+    facet_grid(~pop, switch = "x", scales = "free_x", space = "free") +
+    theme_minimal() + 
+    labs(x = "Individuals", y = "K=3") +
+#    scale_fill_manual(values =  c("#FDB462","#80B1D3")) +
+    scale_fill_manual(values =  c("#22AED1","#E4C200FF","#22196FFF")) +
+#    scale_fill_manual(values =  c("#0C59FEFF","#FC0F00FF")) +
+    scale_y_continuous(expand = c(0, 0)) +
+    scale_x_discrete(expand = expansion(add = 1)) +
+    theme(
+      panel.spacing.x = unit(0.1, "lines"),
+      axis.text.x = element_blank(),
+      panel.grid = element_blank(),
+      strip.text.x = element_blank(),
+      legend.position = "none",
+      axis.title.x = element_blank(),
+      text = element_text(size = 18, colour = "black"),
+      axis.text.y = element_text(size = 16, colour = "black")))
+```
+
+```{r, fig.height=3, fig.width=20}
+(K4_lab <- ggplot(cluster[[4]], aes(x = indv, y=Admixture, fill=Cluster)) +
+    geom_bar(stat = "identity", position = "fill", width = 1) +
+    facet_grid(~pop, switch = "x", scales = "free_x", space = "free") +
+    theme_minimal() + 
+    labs(x = "Individuals", y = "K=4") +
+#    scale_fill_manual(values =  c("#FDB462","#80B1D3")) +
+    scale_fill_manual(values =  c("#22AED1","#DB5461" ,"#22196FFF",  "#E4C200FF")) +
+#    scale_fill_manual(values =  c("#0C59FEFF","#FC0F00FF")) +
+    scale_y_continuous(expand = c(0, 0)) +
+    scale_x_discrete(expand = expansion(add = 1)) +
+    theme(
+      panel.spacing.x = unit(0.1, "lines"),
+      axis.text.x = element_blank(),
+      panel.grid = element_blank(),
+      strip.text.x = element_blank(),
+      legend.position = "none",
+      axis.title.x = element_blank(),
+      text = element_text(size = 18, colour = "black"),
+      axis.text.y = element_text(size = 16, colour = "black")))
+```
+
+```{r, fig.height=3, fig.width=20}
+(K5_lab <- ggplot(cluster[[5]], aes(x = indv, y=Admixture, fill=Cluster)) +
+    geom_bar(stat = "identity", position = "fill", width = 1) +
+    facet_grid(~pop, switch = "x", scales = "free_x", space = "free") +
+    theme_minimal() + 
+    labs(x = "Individuals", y = "K=5") +
+    scale_fill_manual(values =  c("#1E52DCFF","#22196FFF", "#DB5461"  ,"#E4C200FF", "#22AED1")) +
+    scale_y_continuous(expand = c(0, 0)) +
+    scale_x_discrete(expand = expansion(add = 1)) +
+    theme(
+      panel.spacing.x = unit(0.1, "lines"),
+      axis.text.x = element_blank(),
+      panel.grid = element_blank(),
+      strip.text.x = element_blank(),
+      legend.position = "none",
+      axis.title.x = element_blank(),
+      text = element_text(size = 18, colour = "black"),
+      axis.text.y = element_text(size = 16, colour = "black")))
+
+```
+
+```{r, fig.height=3, fig.width=20}
+(K6_lab <- ggplot(cluster[[6]], aes(x = indv, y=Admixture, fill=Cluster)) +
+    geom_bar(stat = "identity", position = "fill", width = 1) +
+    facet_grid(~pop, switch = "x", scales = "free_x", space = "free") +
+    theme_minimal() + 
+    labs(x = "Individuals", y = "K=6") +
+    scale_fill_manual(values =  c("#E4C200FF","#22196FFF" , "#B5ADDBFF","#22AED1", "#DB5461", "#1E52DCFF")) +
+    scale_y_continuous(expand = c(0, 0)) +
+    scale_x_discrete(expand = expansion(add = 1)) +
+    theme(
+      panel.spacing.x = unit(0.1, "lines"),
+      axis.text.x = element_blank(),
+      panel.grid = element_blank(),
+      strip.text.x = element_blank(),
+      legend.position = "none",
+      axis.title.x = element_blank(),
+      text = element_text(size = 18, colour = "black"),
+      axis.text.y = element_text(size = 16, colour = "black")))
+
+```
+
+```{r, fig.height=3, fig.width=20}
+(K7_lab <- ggplot(cluster[[7]], aes(x = indv, y=Admixture, fill=Cluster)) +
+    geom_bar(stat = "identity", position = "fill", width = 1) +
+    facet_grid(~pop, switch = "x", scales = "free_x", space = "free") +
+    theme_minimal() + 
+    labs(x = "Individuals", y = "K=7") +
+    scale_fill_manual(values =  c("#DB5461","#22196FFF" ,"#1E52DCFF", "#22AED1",  "#D9C7A0FF", "#E4C200FF","#B5ADDBFF")) +
+    scale_y_continuous(expand = c(0, 0)) +
+    scale_x_discrete(expand = expansion(add = 1)) +
+    theme(
+      panel.spacing.x = unit(0.1, "lines"),
+      axis.text.x = element_blank(),
+      panel.grid = element_blank(),
+     strip.text.x = element_blank(),
+      legend.position = "none",
+      axis.title.x = element_blank(),
+      text = element_text(size = 18, colour = "black"),
+      axis.text.y = element_text(size = 16, colour = "black")))
+
+```
+
+```{r, fig.height=3, fig.width=20}
+(K8_lab <- ggplot(cluster[[8]], aes(x = indv, y=Admixture, fill=Cluster)) +
+    geom_bar(stat = "identity", position = "fill", width = 1) +
+    facet_grid(~pop, switch = "x", scales = "free_x", space = "free") +
+    theme_minimal() + 
+    labs(x = "Individuals", y = "K=8") +
+    scale_fill_manual(values =  c("#D9C7A0FF","#1E52DCFF","#22AED1", "#DB5461", "#0D132AFF", "#22196FFF", "#E4C200FF" , "#B5ADDBFF")) +
+    scale_y_continuous(expand = c(0, 0)) +
+    scale_x_discrete(expand = expansion(add = 1)) +
+    theme(
+      panel.spacing.x = unit(0.1, "lines"),
+      axis.text.x = element_blank(),
+      panel.grid = element_blank(),
+      strip.text.x = element_blank(),
+      legend.position = "none",
+      axis.title.x = element_blank(),
+      text = element_text(size = 18, colour = "black"),
+      axis.text.y = element_text(size = 16, colour = "black")))
+```
+
+```{r, fig.height=3, fig.width=20}
+(K9_lab <- ggplot(cluster[[9]], aes(x = indv, y=Admixture, fill=Cluster)) +
+    geom_bar(stat = "identity", position = "fill", width = 1) +
+    facet_grid(~pop, switch = "x", scales = "free_x", space = "free") +
+    theme_minimal() + 
+    labs(x = "Individuals", y = "K=9") +
+    scale_fill_manual(values =  c("#DB5461","#22196FFF" ,"#0D132AFF","#B5ADDBFF","#22AED1",  "#D9C7A0FF", "#E4C200FF" ,"#1E52DCFF", "#808FFCFF")) +
+    scale_y_continuous(expand = c(0, 0)) +
+    scale_x_discrete(expand = expansion(add = 1)) +
+    theme(
+      panel.spacing.x = unit(0.1, "lines"),
+      axis.text.x = element_blank(),
+      panel.grid = element_blank(),
+      strip.text.x = element_blank(),
+      legend.position = "none",
+      axis.title.x = element_blank(),
+      text = element_text(size = 18, colour = "black"),
+      axis.text.y = element_text(size = 16, colour = "black")))
+```
+
+```{r, fig.height=3, fig.width=20}
+(K10_lab <- ggplot(cluster[[10]], aes(x = indv, y=Admixture, fill=Cluster)) +
+    geom_bar(stat = "identity", position = "fill", width = 1) +
+    facet_grid(~pop, switch = "x", scales = "free_x", space = "free") +
+    theme_minimal() + 
+    labs(x = "Individuals", y = "K=10") +
+    scale_fill_manual(values =  c("#0D132AFF", "#E4C200FF", "#EEE115FF",  "#1E52DCFF", "#D9C7A0FF", "#22196FFF", "#DB5461","#22AED1",  "#808FFCFF", "#B5ADDBFF")) +
+    scale_y_continuous(expand = c(0, 0)) +
+    scale_x_discrete(expand = expansion(add = 1)) +
+    theme(
+      panel.spacing.x = unit(0.1, "lines"),
+      axis.text.x = element_blank(),
+      panel.grid = element_blank(),
+#      strip.text.x = element_blank(),
+      legend.position = "none",
+      axis.title.x = element_blank(),
+      text = element_text(size = 18, colour = "black"),
+      axis.text.y = element_text(size = 16, colour = "black")))
+```
+
+```{r, fig.width=18, fig.height=15}
+K2_lab / K5_lab
+
+ggsave( file = paste0(RESULT,"LEA_K2-5.png"), width = 60, height = 15, units  ="cm", dpi=300)
+
+suppl_Ks <- K2_lab / K3_lab / K3_lab / K4_lab / K5_lab / K6_lab / K7_lab /K8_lab /K9_lab /K10_lab
+suppl_Ks 
+
+ggsave( file = paste0(RESULT,"LEA_suppl_K2-10.png"), width = 60, height = 30, units  ="cm", dpi=300)
+```
+
+
+### Pies
+
+```{r}
+pie_5 <- cluster[[5]] %>% 
+  group_by(pop) %>% 
+  mutate(count = n()/2) %>% 
+  group_by(pop,Cluster) %>% 
+  summarise(var = sum(Admixture/count)) 
+
+# Basic piechart
+(cluster_5_pie <- pie_5 %>% 
+    ggplot(aes(x=factor(1), y=var, fill=Cluster)) +
+  geom_bar(stat="identity", width=1, colour = "white") +
+    facet_wrap(~pop) +
+  coord_polar("y", start = 0) +
+  theme_void() +
+  theme(
+    legend.position = "none"
+  ))
+
+ggsave(cluster_5_pie, file = paste0(RESULT_LEA,"pie_K5",".png"), width = 90, height = 90, units  ="cm", dpi=300)
+```
+
+

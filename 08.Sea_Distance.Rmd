@@ -1,0 +1,160 @@
+---
+title: "IBD map"
+output:
+  html_notebook:
+    toc: yes
+    toc_depth: 3  # upto three depths of headings (specified by #, ## and ###)
+    number_sections: true  ## if you want number sections at each table header
+    toc_float: true
+    theme: united  # many options for theme, this one is my favorites.
+    highlight: tango  # specifies the syntax highlighting style
+    code_folding: hide
+#editor_options: 
+  #chunk_output_type: console
+---
+
+```{r setup}
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+```
+
+
+```{r}
+#not working well as resolution too low, and some sampling spots are quite high on land
+HOME <- "~/Library/CloudStorage/Dropbox/Steffi_Zostera_analysis_2023/Monitoring2023/Monitoring_eelgrass_scripts_for_figshare"  # directory 
+DATA <- paste0(HOME, "/data/") # data folder
+RESULT <- paste0(HOME, "/results/") #result folder
+SCRATCH <- paste0(HOME, "/scratch/") #result folder
+pop_info <- paste0(DATA, "pop_info.csv")
+```
+
+
+```{r}
+# packages
+#library(devtools) # load library devtools
+#install_github("ericpante/marmap", force=TRUE)
+library("marmap")
+library("raster")
+```
+
+```{r}
+pop_info_df <- read.csv(pop_info, stringsAsFactors = TRUE, sep = ";")
+pop_info_df$site_full <- factor(pop_info_df$site_full, levels = pop_info_df$site_full)
+```
+
+```{r}
+xmin <- min(pop_info_df$long)
+xmax <- max(pop_info_df$long)
+xmean <-mean(pop_info_df$long) 
+ymin <- min(pop_info_df$lat)
+ymax <- max(pop_info_df$lat)
+ymean <-mean(pop_info_df$lat) 
+```
+
+```{r}
+# make bathymetry map
+BigFUN <- getNOAA.bathy(lon1 = 10.95, lon2 = 19.1,
+                        lat1 = 55.4, lat2 = 60.0, resolution = 0.5)
+
+blues <- c("lightsteelblue4", "lightsteelblue3","lightsteelblue2", "lightsteelblue1")
+
+greys <- c(grey(0.6), grey(0.93), grey(0.99))
+                            
+plot(BigFUN, image = TRUE, land = TRUE, lwd = 0.03,
+  bpal = list(c(0, max(BigFUN), greys),c(min(BigFUN), 0, blues)))
+
+pop_info_df$long
+pop_info_df$lat
+pop_info_df$site_full
+
+# I needed to adjust the coordinates -> they were plotted on land...
+plot(BigFUN, n = 1, lwd = 0.4, add = TRUE)
+        x=c(10.99199, 11.81013, 12.02123, 12.78014, 12.55141, 12.77103, 13.850444, 14.724034, 16.935518, 18.136311, 16.759143, 18.875656, 17.453320, 17.945141, 19.083371)
+        y=c(58.88254, 58.05143, 57.39626, 56.64116, 56.19690, 55.94068, 55.418482, 56.096141, 56.968571, 57.392970, 57.689739, 57.700727, 58.688715, 58.872945, 59.829522)
+        station <- paste("station", 1:15, sep = "")
+        sampling <- data.frame(x, y, station)
+        sites=data.frame(x,y)
+        names=c("Koster donor","Stenungsund","Gottskär","Grötvik","Höganäs","Ålabodarna","Ystad","Furumon","Kårehamn","Klintehamn","Hornsudde","Slite","Krampö","Nynäshamn","Björkö")
+        row.names(sites)=names
+        
+#######   original  coordinates
+#plot(BigFUN, n = 1, lwd = 0.4, add = TRUE)
+#        x=c(10.99199, 11.81013, 12.02123, 12.78014, 12.55141, 12.77103, 13.84636, 14.72030, 16.91238, 18.15272, 16.73062, 18.83117, 17.46587, 17.95422, 19.07868)
+#        y=c(58.88254, 58.05143, 57.39626, 56.64116, 56.19690, 55.94068, 55.42156, 56.09540, 56.96957, 57.40116, 57.69515, 57.71332, 58.69065, 58.88111, 59.83484)
+#        station <- paste("station", 1:15, sep = "")
+#        sampling <- data.frame(x, y, station)
+#        sites=data.frame(x,y)
+#        names=c("Koster donor","Stenungsund","Gottskär","Grötvik","Höganäs","Ålabodarna","Ystad","Furumon","Kårehamn","Klintehamn","Hornsudde","Slite","K#rampö","Nynäshamn","Björkö")
+#        row.names(sites)=names        
+########### original  coordinates
+                            
+#png(filename = "BigFUN_sampling.png", width=12, height=12, units="cm", pointsize=12, bg="white", res=600)
+
+plot(BigFUN, image = TRUE, land = TRUE, n=1,
+    bpal = list(c(0, max(BigFUN), greys),c(min(BigFUN), 0, blues)))
+    points(sites, pch = 21, col = "black",bg = "white", cex = 1)
+    text(sites[,1], sites[,2], lab = rownames(sites),pos = c(2, 1, 1, 2), col = "black", cex=1)
+#dev.off()
+```
+
+```{r}
+#calculating least cost path
+sites=data.frame(x,y)
+
+# Compute transition object with no depth constraint
+?trans.mat
+#trans1 <- trans.mat(BigFUN)
+trans1 <- trans.mat(BigFUN,min.depth=0,max.depth=NULL)
+```
+
+```{r}
+# Compute transition object with minimum depth constraint: 
+# path impossible in waters shallower than -10 meters depth
+trans2 <- trans.mat(BigFUN, min.depth = -10)
+
+# Visualizing results
+par(mfrow=c(1,2))
+plot(raster(trans1), main="No depth constraint")
+plot(raster(trans2), main="Constraint in shallow waters")
+
+
+out1 <- lc.dist(trans1, sites, res = "path")
+out2 <- lc.dist(trans2, sites, res = "path")
+```
+
+
+```{r}
+plot(BigFUN, xlim = c(10, 20), ylim = c(55, 60),
+     deep = c(-5000, -200, 0), shallow = c(-200, 0, 0),
+     col = c("grey", "blue", "black"), step = c(1000, 200, 1),
+     lty = c(1, 1, 1), lwd = c(0.6, 0.6, 1.2),
+     draw = c(FALSE, FALSE, FALSE))
+                            
+points(sites, pch = 21, col = "blue", bg = col2alpha("blue", .9), cex = 1.2)
+                            
+text(sites[,1], sites[,2], lab = rownames(sites),pos = c(3, 4, 1, 2), col = "blue")
+                            
+lapply(out1, lines, col = "orange", lwd = 5, lty = 1) -> dummy
+lapply(out2, lines, col = "black", lwd = 1, lty = 1) -> dummy
+```
+
+```{r}
+library("fossil")
+dist0 <- round(earth.dist(sites), 0)
+dist1 <- lc.dist(trans1, sites, res = "dist")
+dist2 <- lc.dist(trans2, sites, res = "dist")
+                            
+                            
+p3 <- as.data.frame(table(dist2))
+write.table(p3,"dist2.txt")
+```
+
+```{r}
+library(MASS)
+write.matrix(dist0, file = paste0(RESULT, "matrix dist0.txt"))
+write.matrix(dist1, file = paste0(RESULT, "matrix dist1.txt"))
+write.matrix(dist2, file = paste0(RESULT, "matrix dist2.txt"))
+
+
+```
+
+
